@@ -1,0 +1,8 @@
+{
+  "name": "Copy of HS - Health Smart",
+  "description": "An AI-based 24/7 smart post-operative remote recovery monitoring system for hospitals to track patient progress.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
