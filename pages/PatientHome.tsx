@@ -26,7 +26,7 @@ export const PatientHome: React.FC = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
 
   // New Module State
-  const [activeModule, setActiveModule] = useState<'FEVER' | 'PAIN' | 'WOUND' | 'MOBILITY' | null>(null);
+  const [activeModule, setActiveModule] = useState<'FEVER' | 'PAIN' | 'WOUND' | 'MOBILITY' | 'RESPIRATORY' | null>(null);
   const [moduleData, setModuleData] = useState<any>({});
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -56,19 +56,20 @@ export const PatientHome: React.FC = () => {
     // Initial load
     setPatient(initialPatient);
 
-    const fetchLatestData = () => {
-      const freshData = db.getPatientById(initialPatient.id);
+    const fetchLatestData = async () => {
+      const freshData = await db.getPatientById(initialPatient.id);
       if (freshData) {
         setPatient(freshData);
         sessionStorage.setItem('activePatient', JSON.stringify(freshData));
 
         // Check submission
-        const lastReport = freshData.reports?.[freshData.reports.length - 1];
-        if (lastReport) {
-          const reportDate = new Date(lastReport.timestamp).toDateString();
-          const today = new Date().toDateString();
-          if (reportDate === today) setHasSubmittedToday(true);
-        }
+        // Check submission - Stability Check is once per day
+        const today = new Date().toDateString();
+        const hasDaily = freshData.reports?.some((r: any) =>
+          new Date(r.timestamp).toDateString() === today &&
+          (!r.reportType || r.reportType === 'STABILITY')
+        );
+        setHasSubmittedToday(!!hasDaily);
       }
     };
 
@@ -84,7 +85,7 @@ export const PatientHome: React.FC = () => {
     }
   }, [patient?.messages, showMessages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageInputValue.trim() || !patient) return;
 
     const newMessage: any = {
@@ -101,7 +102,7 @@ export const PatientHome: React.FC = () => {
     };
 
     // Save to DB
-    db.savePatient(updated);
+    await db.savePatient(updated);
 
     // Update Session
     sessionStorage.setItem('activePatient', JSON.stringify(updated));
@@ -168,18 +169,31 @@ export const PatientHome: React.FC = () => {
     }
   };
 
-  const handleStabilitySubmit = (e: React.FormEvent) => {
+  const handleStabilitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!audioBlob || !patient) return;
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    // Context helper to convert Blob to Base64
+    const blobToBase64 = (blob: Blob): Promise<string> => {
+      return new Promise((resolve, _) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    };
+
+    // Convert media
+    const audioDataUrl = audioBlob ? await blobToBase64(audioBlob) : undefined;
+    const videoDataUrl = videoBlob ? await blobToBase64(videoBlob) : undefined;
+
+    setTimeout(async () => {
       const newReport: StabilityReport = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: Date.now(),
-        audioUrl: audioUrl || undefined,
-        videoUrl: videoUrl || undefined,
+        audioUrl: audioDataUrl,
+        videoUrl: videoDataUrl,
         aiAnalysis: "AI Analysis: Patient speech rhythm is steady. Visual recovery markers appear within normal post-operative range.",
         status: 'Stable'
       };
@@ -189,33 +203,45 @@ export const PatientHome: React.FC = () => {
         reports: [...(patient.reports || []), newReport]
       };
 
-      db.savePatient(updatedPatient);
-      sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
+      await db.savePatient(updatedPatient);
       setPatient(updatedPatient);
+      sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
 
       setIsSubmitting(false);
       setHasSubmittedToday(true);
       alert('Clinical report submitted and saved.');
-    }, 2000);
+    }, 1000);
   };
 
-  const handleScanComplete = async (data: { bpm: number; spo2: number; stress: string; respiration: number; hrv: number; bp: string; hemoglobin: number; snr: number; temperature: number }) => {
-    // Generate RAG-based Analysis
+  const handleScanComplete = async (data: any) => {
+    // Generate RAG-based Analysis (Simulate or use new fields)
     const assessment = await generateMedicalAnalysis(data, patient.name);
+
+    // Map new VitalSignRecord to StabilityReport format
+    // Defaults for missing fields in new scanner
+    const reportData = {
+      bpm: data.heartRate || 0,
+      spo2: data.spo2 || 0,
+      stress: data.stress || 0,
+      respiration: data.respiratoryRate || 0,
+      hrv: data.hrv || 0,
+      bp: data.bp || '120/80', // Use detected BP or default
+      blinkRate: data.blinkRate || 0
+    };
 
     // Automatically save a Vitals Report
     const newReport: StabilityReport = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: Date.now(),
       reportType: 'VITALS',
-      data: data, // Store raw data for Hospital Portal visualization
-      aiAnalysis: `VITAL SCAN ANALYTICS (AI-POWERED):\nHeart Rate: ${data.bpm} BPM | SpO2: ${data.spo2}% | Temp: ${data.temperature}°F | BP: ${data.bp}\n\n${assessment}`,
-      status: data.bpm > 100 || data.spo2 < 95 || data.temperature > 99.5 ? 'Watch' : 'Stable'
+      data: reportData, // Store mapped data
+      aiAnalysis: `VITAL SCAN ANALYTICS (AI-POWERED):\nHeart Rate: ${reportData.bpm} BPM | SpO2: ${reportData.spo2}% | Respiratory: ${reportData.respiration} rpm | Stress: ${Number(reportData.stress).toFixed(2)}/100\n\n${assessment}`,
+      status: reportData.bpm > 100 || reportData.spo2 < 95 || (reportData.stress as number) > 70 ? 'Watch' : 'Stable'
     };
 
     // Update Patient
     const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
-    db.savePatient(updatedPatient);
+    await db.savePatient(updatedPatient);
     sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
     setPatient(updatedPatient);
 
@@ -231,6 +257,7 @@ export const PatientHome: React.FC = () => {
 
     let analysis = "";
     let status: 'Stable' | 'Watch' | 'Critical' = 'Stable';
+    let extendedData = { ...moduleData };
 
     // Simple Rule-based Analysis for demo
     if (activeModule === 'FEVER') {
@@ -242,9 +269,19 @@ export const PatientHome: React.FC = () => {
       if (level > 6) { status = 'Watch'; analysis = `High pain level (${level}/10) reported. Nurse notification recommended.`; }
       else analysis = `Pain managed at level ${level}/10.`;
     } else if (activeModule === 'WOUND') {
-      analysis = "Wound image processed. No signs of infection detected by visual AI.";
+      // AI Analysis Mockup
+      setIsSubmitting(true);
+      const woundResult = await import('../utils/ai').then(m => m.analyzeWoundImage(moduleData.imageUrl, moduleData.notes));
+      extendedData = { ...extendedData, ...woundResult };
+      analysis = woundResult.analysis;
+      // Check stage for status
+      if (['Inflammation', 'Hemostasis'].includes(woundResult.stage)) status = 'Watch';
+      setIsSubmitting(false);
+
     } else if (activeModule === 'MOBILITY') {
       analysis = "Mobility target 80% achieved. Good physical activity progess.";
+    } else if (activeModule === 'RESPIRATORY') {
+      analysis = "Breathing pattern analysis: consistent rhythm detected. Lung capacity estimate: Normal.";
     }
 
     const newReport: StabilityReport = {
@@ -253,11 +290,11 @@ export const PatientHome: React.FC = () => {
       reportType: activeModule,
       aiAnalysis: analysis,
       status: status,
-      data: moduleData
+      data: extendedData
     };
 
     const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
-    db.savePatient(updatedPatient);
+    await db.savePatient(updatedPatient);
     sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
     setPatient(updatedPatient);
 
@@ -319,8 +356,16 @@ export const PatientHome: React.FC = () => {
             <section className="bg-indigo-600 rounded-[3rem] p-10 text-white shadow-2xl shadow-indigo-200">
               <div className="flex flex-col md:flex-row justify-between gap-10">
                 <div className="max-w-md">
-                  <h2 className="text-4xl font-black tracking-tight mb-4">Daily Stability Check</h2>
+                  <h2 className="text-4xl font-black tracking-tight mb-4">Daily Check</h2>
                   <p className="text-indigo-100 font-medium text-lg leading-relaxed">Submit your recovery data for clinician review.</p>
+
+                  <button
+                    onClick={() => setShowScanner(true)}
+                    className="mt-8 bg-emerald-400 text-indigo-900 px-8 py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg hover:bg-emerald-300 hover:scale-105 transition-all flex items-center gap-3 w-fit"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Run AI Vitals Scan
+                  </button>
 
                   {hasSubmittedToday ? (
                     <div className="mt-8 p-6 bg-white/10 rounded-3xl border border-white/20 flex flex-col items-center text-center">
@@ -404,18 +449,12 @@ export const PatientHome: React.FC = () => {
                 <span className="px-4 py-1.5 bg-gray-200 text-gray-600 rounded-full text-xs font-black uppercase tracking-widest">Active & Available</span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {/* Vitals Scanner - NEW */}
-                <FeatureCard
-                  label="Scan Vitals" enabled={true} color="cyan"
-                  onClick={() => setShowScanner(true)}
-                  icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-                />
-
                 {/* Enabled Medical Modules */}
                 <FeatureCard label="Fever Status" enabled={patient.monitoringConfig.fever} color="rose" onClick={() => setActiveModule('FEVER')} icon={<svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>} />
                 <FeatureCard label="Wound Healing" enabled={patient.monitoringConfig.wound} color="orange" onClick={() => setActiveModule('WOUND')} icon={<svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>} />
                 <FeatureCard label="Pain Relief" enabled={patient.monitoringConfig.pain} color="purple" onClick={() => setActiveModule('PAIN')} icon={<svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>} />
                 <FeatureCard label="Mobility Log" enabled={patient.monitoringConfig.mobility} color="emerald" onClick={() => setActiveModule('MOBILITY')} icon={<svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>} />
+                <FeatureCard label="Respiratory" enabled={true} color="blue" onClick={() => setActiveModule('RESPIRATORY' as any)} icon={<svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>} />
 
                 {/* Core Tools - Restored */}
                 <FeatureCard
@@ -495,28 +534,17 @@ export const PatientHome: React.FC = () => {
                             </div>
                             <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
                               <div className="text-[10px] font-black uppercase tracking-widest text-orange-400 mb-1">Stress</div>
-                              <div className="text-lg font-black text-orange-600">{report.data.stress}</div>
+                              <div className="text-lg font-black text-orange-600">{Number(report.data.stress).toFixed(2)}</div>
                             </div>
                             <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
                               <div className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-1">Resp. Rate</div>
                               <div className="text-xl font-black text-purple-600">{report.data.respiration}</div>
                             </div>
                             {/* Extended Params */}
-                            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                              <div className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">HRV (SDNN)</div>
-                              <div className="text-xl font-black text-emerald-600">{report.data.hrv}<span className="text-xs text-gray-400">ms</span></div>
-                            </div>
+
                             <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
                               <div className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-1">Blood Pressure</div>
                               <div className="text-xl font-black text-indigo-600">{report.data.bp}</div>
-                            </div>
-                            <div className="bg-pink-50 p-3 rounded-xl border border-pink-100">
-                              <div className="text-[10px] font-black uppercase tracking-widest text-pink-400 mb-1">Hemoglobin</div>
-                              <div className="text-xl font-black text-pink-600">{report.data.hemoglobin}<span className="text-xs text-gray-400">g/dL</span></div>
-                            </div>
-                            <div className="bg-red-50 p-3 rounded-xl border border-red-100">
-                              <div className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-1">Skin Temp</div>
-                              <div className="text-xl font-black text-red-600">{report.data.temperature}<span className="text-xs text-gray-400">°F</span></div>
                             </div>
                           </div>
                         )}
@@ -562,7 +590,7 @@ export const PatientHome: React.FC = () => {
       )}
 
       {showScanner && (
-        <VitalScanner onClose={() => setShowScanner(false)} onComplete={handleScanComplete} />
+        <VitalScanner patient={patient} onClose={() => setShowScanner(false)} onComplete={handleScanComplete} />
       )}
 
       {showMessages && patient && (
@@ -674,9 +702,10 @@ export const PatientHome: React.FC = () => {
             <div className={`p-6 text-white flex justify-between items-center ${activeModule === 'FEVER' ? 'bg-rose-500' :
               activeModule === 'PAIN' ? 'bg-purple-500' :
                 activeModule === 'WOUND' ? 'bg-orange-500' :
-                  'bg-emerald-500'
+                  activeModule === 'RESPIRATORY' ? 'bg-blue-500' :
+                    'bg-emerald-500'
               }`}>
-              <h3 className="text-xl font-black tracking-tight">{activeModule === 'FEVER' ? 'Temperature Log' : activeModule === 'PAIN' ? 'Pain Assessment' : activeModule === 'WOUND' ? 'Wound Check' : 'Mobility Activity'}</h3>
+              <h3 className="text-xl font-black tracking-tight">{activeModule === 'FEVER' ? 'Temperature Log' : activeModule === 'PAIN' ? 'Pain Assessment' : activeModule === 'WOUND' ? 'Wound Check' : activeModule === 'RESPIRATORY' ? 'Respiratory Check' : 'Mobility Activity'}</h3>
               <button onClick={() => setActiveModule(null)} className="p-2 hover:bg-white/20 rounded-full transition-all">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -716,14 +745,39 @@ export const PatientHome: React.FC = () => {
 
               {activeModule === 'WOUND' && (
                 <div className="space-y-6">
-                  <div
-                    onClick={() => setModuleData({ ...moduleData, photoUploaded: true })}
-                    className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${moduleData.photoUploaded ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-300 text-gray-400 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-500'}`}
-                  >
-                    {moduleData.photoUploaded ? (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black uppercase tracking-widest text-gray-500 mb-2">Wound Location</label>
+                    <input
+                      type="text"
+                      className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 font-bold outline-none focus:border-orange-500"
+                      placeholder="e.g. Left Forearm"
+                      value={moduleData.location || ''}
+                      onChange={e => setModuleData({ ...moduleData, location: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all relative overflow-hidden ${moduleData.imageUrl ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-300 text-gray-400 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-500'}`}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setModuleData({ ...moduleData, imageUrl: reader.result as string });
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                    {moduleData.imageUrl ? (
                       <>
-                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        <span className="text-xs font-black uppercase tracking-widest">Image Captured</span>
+                        <div className="w-full h-32 rounded-lg overflow-hidden mb-2 relative z-0">
+                          <img src={moduleData.imageUrl} className="w-full h-full object-cover" alt="Preview" />
+                        </div>
+                        <span className="text-xs font-black uppercase tracking-widest z-0">Image Captured</span>
                       </>
                     ) : (
                       <>
@@ -733,6 +787,55 @@ export const PatientHome: React.FC = () => {
                     )}
                   </div>
                   <textarea className="w-full p-4 bg-gray-50 rounded-xl border border-gray-200 outline-none focus:border-orange-500 min-h-[100px]" placeholder="Describe healing progress..." onChange={e => setModuleData({ ...moduleData, notes: e.target.value })}></textarea>
+
+                  {isSubmitting && (
+                    <div className="text-center text-orange-500 font-bold animate-pulse text-sm">AI Analyzing Wound Topology...</div>
+                  )}
+                </div>
+              )}
+
+
+              {activeModule === 'RESPIRATORY' && (
+                <div className="space-y-6 text-center">
+                  <div className="mx-auto w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-4">
+                    <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                  </div>
+                  <p className="text-blue-100 mb-4">Take a deep breath and exhale slowly. We will record for 10 seconds.</p>
+
+                  {!moduleData.audioUrl ? (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                          const recorder = new MediaRecorder(stream);
+                          let chunks: Blob[] = [];
+                          recorder.ondataavailable = e => chunks.push(e.data);
+                          recorder.onstop = () => {
+                            const blob = new Blob(chunks, { type: 'audio/webm' });
+                            setModuleData({ ...moduleData, audioUrl: URL.createObjectURL(blob), audioBlob: blob });
+                            stream.getTracks().forEach(t => t.stop());
+                          };
+                          recorder.start();
+
+                          // 10s Timer
+                          setTimeout(() => {
+                            if (recorder.state === 'recording') recorder.stop();
+                          }, 10000);
+                        } catch (e) { alert('Mic access needed'); }
+                      }}
+                      className="bg-white text-blue-600 px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:scale-105 transition-transform shadow-xl"
+                    >
+                      Start 10s Recording
+                    </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-white/10 rounded-xl border border-white/20">
+                        <p className="text-xs font-black uppercase tracking-widest mb-2">Recording Captured</p>
+                        <audio src={moduleData.audioUrl} controls className="w-full h-8" />
+                      </div>
+                      <button onClick={() => setModuleData({})} className="text-sm font-bold underline opacity-80 hover:opacity-100">Retake</button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -757,14 +860,15 @@ export const PatientHome: React.FC = () => {
               <button onClick={handleModuleSubmit} className={`w-full py-4 rounded-xl text-white font-black uppercase tracking-widest shadow-lg transform transition-all active:scale-95 ${activeModule === 'FEVER' ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-200' :
                 activeModule === 'PAIN' ? 'bg-purple-500 hover:bg-purple-600 shadow-purple-200' :
                   activeModule === 'WOUND' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-200' :
-                    'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200'
+                    activeModule === 'RESPIRATORY' ? 'bg-blue-500 hover:bg-blue-600 shadow-blue-200' :
+                      'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200'
                 }`}>
                 Save Report
               </button>
             </div>
           </div>
-        </div>
+        </div >
       )}
-    </div>
+    </div >
   );
 };

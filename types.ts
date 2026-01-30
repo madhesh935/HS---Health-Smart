@@ -57,3 +57,13 @@ export interface MonitoringConfig {
 export interface AppState {
   currentHospital: Hospital | null;
 }
+
+export interface VitalSignRecord {
+  heartRate: number;
+  spo2: number;
+  hrv: number;
+  stress: number;
+  respiratoryRate: number;
+  blinkRate: number;
+  timestamp: number;
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+
 import { Patient } from '../types';
 
 interface ChatBotProps {
@@ -39,7 +39,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ patient, onClose }) => {
         }
     }, []);
 
-    const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -64,119 +64,28 @@ export const ChatBot: React.FC<ChatBotProps> = ({ patient, onClose }) => {
         setIsLoading(true);
 
         try {
-            if (!apiKey) {
-                throw new Error("API Key missing");
-            }
+            // Import the helper dynamically or assume it's imported at top
+            const { chatWithAI } = await import('../utils/ai');
 
-            let responseText = '';
+            const systemPrompt = `You are a helpful, empathetic post-operative recovery assistant. 
+                    Patient Name: ${patient.name}
+                    Condition: ${patient.medicalConditions}
+                    Status: ${patient.status}
+                    Your goal is to provide supportive, non-medical advice for recovery. 
+                    - Always encourage the patient interactively.
+                    - If they mention severe pain, fever over 101F, or bleeding, advise them to contact their doctor immediately.
+                    - Keep responses concise (under 3 sentences) unless asked for details.
+                    - Do not provide diagnosis or prescription changes.`;
 
-            // OpenRouter Handling - check locally for key pattern
-            if (apiKey.includes('sk-or-v1')) {
-                const modelsToTry = [
-                    "google/gemini-2.0-flash-001",
-                    "google/gemini-flash-1.5",
-                    "google/gemini-pro-1.5",
-                    "mistralai/mistral-7b-instruct:free"
-                ];
+            // Filter out the welcome message and local-only errors from history
+            const validHistory = messages
+                .filter(m => m.id !== 'welcome' && !m.id.startsWith('error'))
+                .map(m => ({
+                    role: m.role,
+                    text: m.text
+                }));
 
-                let successful = false;
-                let lastError = null;
-
-                for (const model of modelsToTry) {
-                    try {
-                        console.log(`Attempting OpenRouter with model: ${model}`);
-                        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                            method: "POST",
-                            headers: {
-                                "Authorization": `Bearer ${apiKey}`,
-                                "Content-Type": "application/json",
-                                "HTTP-Referer": window.location.href,
-                                "X-Title": "Health Smart Recovery"
-                            },
-                            body: JSON.stringify({
-                                "model": model,
-                                "messages": [
-                                    {
-                                        "role": "system",
-                                        "content": `You are a helpful, empathetic post-operative recovery assistant. 
-                                            Patient Name: ${patient.name}
-                                            Condition: ${patient.medicalConditions}
-                                            Status: ${patient.status}
-                                            Your goal is to provide supportive, non-medical advice for recovery.`
-                                    },
-                                    ...messages.map(m => ({
-                                        "role": m.role === 'model' ? 'assistant' : 'user',
-                                        "content": m.text
-                                    })),
-                                    { "role": "user", "content": input }
-                                ]
-                            })
-                        });
-
-                        if (!response.ok) {
-                            const err = await response.json();
-                            throw new Error(err.error?.message || `Status ${response.status}`);
-                        }
-
-                        const data = await response.json();
-                        responseText = data.choices[0]?.message?.content || "No response.";
-                        successful = true;
-                        break; // Exit loop on success
-                    } catch (err) {
-                        console.warn(`Failed with model ${model}:`, err);
-                        lastError = err;
-                        // Continue to next model
-                    }
-                }
-
-                if (!successful) {
-                    throw new Error(`All models failed. Last error: ${lastError instanceof Error ? lastError.message : 'Unknown'}`);
-                }
-
-            } else {
-                // Default Google AI Studio Handling
-                if (!genAI) throw new Error("Google AI SDK not initialized");
-
-                // Use 'gemini-pro' which is widely available standard model
-                const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-                const systemPrompt = `You are a helpful, empathetic post-operative recovery assistant. 
-                        Patient Name: ${patient.name}
-                        Condition: ${patient.medicalConditions}
-                        Status: ${patient.status}
-                        Your goal is to provide supportive, non-medical advice for recovery. 
-                        - Always encourage the patient interactively.
-                        - If they mention severe pain, fever over 101F, or bleeding, advise them to contact their doctor immediately.
-                        - Keep responses concise (under 3 sentences) unless asked for details.
-                        - Do not provide diagnosis or prescription changes.`;
-
-                // Manually prime the history with system instructions since 'gemini-pro' 
-                // might not support systemInstruction config or the user's key might be limited.
-                const apiHistory = [
-                    {
-                        role: 'user',
-                        parts: [{ text: systemPrompt }]
-                    },
-                    {
-                        role: 'model',
-                        parts: [{ text: "Understood. I am your empathetic recovery assistant. I will provide supportive care advice." }]
-                    },
-                    ...messages
-                        .filter(m => m.id !== 'welcome')
-                        .map(m => ({
-                            role: m.role,
-                            parts: [{ text: m.text }]
-                        }))
-                ];
-
-                const chat = model.startChat({
-                    history: apiHistory
-                });
-
-                const result = await chat.sendMessage(input);
-                const response = await result.response;
-                responseText = response.text();
-            }
+            const responseText = await chatWithAI(systemPrompt, validHistory, input);
 
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
@@ -189,7 +98,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ patient, onClose }) => {
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
                 role: 'model',
-                text: `Connection Error: ${error instanceof Error ? error.message : 'Unknown error'}. (Key used: ${keySnippet})`
+                text: `Connection Error: ${error instanceof Error ? error.message : 'Unknown error'}.`
             }]);
         } finally {
             setIsLoading(false);

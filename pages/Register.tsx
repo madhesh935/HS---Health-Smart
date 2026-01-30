@@ -10,16 +10,16 @@ export const Register: React.FC = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (db.getHospitalById(hospitalId)) {
+    if (await db.getHospitalById(hospitalId)) {
       setError('Hospital ID already exists. Please choose a unique one.');
       return;
     }
 
-    db.saveHospital({ id: hospitalId, name, password });
+    await db.saveHospital({ id: hospitalId, name, password });
     alert('Registration successful! Please login.');
     navigate('/login');
   };
@@ -27,7 +27,7 @@ export const Register: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 relative">
       {/* Back Button */}
-      <button 
+      <button
         onClick={() => navigate('/login')}
         className="absolute top-10 left-10 p-3 bg-white hover:bg-gray-100 rounded-2xl transition-all shadow-sm border border-gray-100 flex items-center gap-2 font-bold text-gray-600"
       >

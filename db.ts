@@ -1,42 +1,54 @@
-
 import { Hospital, Patient } from './types';
 
-const HOSPITALS_KEY = 'smart_postop_hospitals';
-const PATIENTS_KEY = 'smart_postop_patients';
+const API_URL = 'http://localhost:3005/api';
 
 export const db = {
-  getHospitals: (): Hospital[] => {
-    const data = localStorage.getItem(HOSPITALS_KEY);
-    return data ? JSON.parse(data) : [];
+  getHospitals: async (): Promise<Hospital[]> => {
+    try {
+      const res = await fetch(`${API_URL}/hospitals`);
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) { console.error(e); return []; }
   },
-  saveHospital: (hospital: Hospital) => {
-    const hospitals = db.getHospitals();
-    hospitals.push(hospital);
-    localStorage.setItem(HOSPITALS_KEY, JSON.stringify(hospitals));
+  saveHospital: async (hospital: Hospital) => {
+    await fetch(`${API_URL}/hospitals`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(hospital)
+    });
   },
-  getHospitalById: (id: string): Hospital | undefined => {
-    return db.getHospitals().find(h => h.id === id);
+  getHospitalById: async (id: string): Promise<Hospital | undefined> => {
+    const hospitals = await db.getHospitals();
+    return hospitals.find(h => h.id === id);
   },
-  getPatients: (): Patient[] => {
-    const data = localStorage.getItem(PATIENTS_KEY);
-    return data ? JSON.parse(data) : [];
+  getPatients: async (): Promise<Patient[]> => {
+    try {
+      const res = await fetch(`${API_URL}/patients`);
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) { console.error(e); return []; }
   },
-  getPatientById: (id: string): Patient | undefined => {
-    return db.getPatients().find(p => p.id === id);
+  getPatientById: async (id: string): Promise<Patient | undefined> => {
+    const patients = await db.getPatients();
+    return patients.find(p => p.id === id);
   },
-  getPatientsByMobile: (mobile: string): Patient[] => {
-    return db.getPatients().filter(p => p.mobileNumber === mobile);
+  getPatientsByMobile: async (mobile: string): Promise<Patient[]> => {
+    const patients = await db.getPatients();
+    return patients.filter(p => p.mobileNumber === mobile);
   },
-  savePatient: (patient: Patient) => {
-    const patients = db.getPatients();
-    const existingIndex = patients.findIndex(p => p.id === patient.id);
-    if (existingIndex >= 0) {
-      patients[existingIndex] = patient;
-    } else {
-      if (!patient.reports) patient.reports = [];
-      patients.push(patient);
-    }
-    localStorage.setItem(PATIENTS_KEY, JSON.stringify(patients));
+  savePatient: async (patient: Patient) => {
+    // Check if update or create
+    const patients = await db.getPatients();
+    const needsUpdate = patients.some(p => p.id === patient.id);
+
+    const url = needsUpdate ? `${API_URL}/patients/${patient.id}` : `${API_URL}/patients`;
+    const method = needsUpdate ? 'PUT' : 'POST';
+
+    await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patient)
+    });
   },
   generatePatientId: (): string => {
     return 'PAT-' + Math.random().toString(36).substr(2, 6).toUpperCase();

@@ -3,3 +3,7 @@
 @theme {
     --font-sans: 'Inter', sans-serif;
 }
+
+:root {
+    color-scheme: light;
+}

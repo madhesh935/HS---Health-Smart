@@ -9,11 +9,11 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const hospital = db.getHospitalById(hospitalId);
+    const hospital = await db.getHospitalById(hospitalId);
     if (hospital && hospital.password === password) {
       sessionStorage.setItem('activeHospital', JSON.stringify(hospital));
       navigate('/dashboard');
@@ -25,7 +25,7 @@ export const Login: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 relative">
       {/* Back Button */}
-      <button 
+      <button
         onClick={() => navigate('/')}
         className="absolute top-10 left-10 p-3 bg-white hover:bg-gray-100 rounded-2xl transition-all shadow-sm border border-gray-100 flex items-center gap-2 font-bold text-gray-600"
       >

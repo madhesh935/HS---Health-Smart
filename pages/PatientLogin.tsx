@@ -17,10 +17,10 @@ export const PatientLogin: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate verification delay
+    // Verification delay
     await new Promise(resolve => setTimeout(resolve, 800));
 
-    const patient = db.getPatientById(patientId.trim().toUpperCase());
+    const patient = await db.getPatientById(patientId.trim().toUpperCase());
     if (patient) {
       const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedOtp(mockOtp);
@@ -44,10 +44,10 @@ export const PatientLogin: React.FC = () => {
   const handleOtpVerify = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsLoading(false);
       if (otp.trim() === generatedOtp) {
-        const patient = db.getPatientById(patientId.trim().toUpperCase());
+        const patient = await db.getPatientById(patientId.trim().toUpperCase());
         sessionStorage.setItem('activePatient', JSON.stringify(patient));
         navigate('/patient/home');
       } else {

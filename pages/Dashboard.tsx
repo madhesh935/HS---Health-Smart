@@ -20,8 +20,9 @@ export const Dashboard: React.FC = () => {
     }
     const h = JSON.parse(stored);
     setHospital(h);
-    const allPatients = db.getPatients();
-    setPatients(allPatients.filter(p => p.hospitalId === h.id));
+    db.getPatients().then(allPatients => {
+      setPatients(allPatients.filter(p => p.hospitalId === h.id));
+    });
   }, [navigate]);
 
   /* Scroll ref for chat */
@@ -33,7 +34,7 @@ export const Dashboard: React.FC = () => {
     }
   }, [selectedPatient?.messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!selectedPatient || !messageText.trim()) return;
 
     const newMessage: any = {
@@ -49,7 +50,7 @@ export const Dashboard: React.FC = () => {
       messages: [...(selectedPatient.messages || []), newMessage]
     };
 
-    db.savePatient(updatedPatient);
+    await db.savePatient(updatedPatient);
 
     // Update local state
     setPatients(prev => prev.map(p => p.id === updatedPatient.id ? updatedPatient : p));

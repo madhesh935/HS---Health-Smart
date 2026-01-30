@@ -74,10 +74,10 @@ export const CreatePatient: React.FC = () => {
 
   const handleVerifyOtp = () => {
     setIsVerifying(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsVerifying(false);
       if (otp.trim() === generatedOtp.trim()) {
-        const existing = db.getPatientsByMobile(patientData.mobileNumber);
+        const existing = await db.getPatientsByMobile(patientData.mobileNumber);
         if (existing.length > 0) {
           setExistingPatients(existing);
           setStep('CHECK');
@@ -90,7 +90,7 @@ export const CreatePatient: React.FC = () => {
     }, 1000);
   };
 
-  const finalizePatientCreation = (useExistingId?: string) => {
+  const finalizePatientCreation = async (useExistingId?: string) => {
     if (!hospital) return;
 
     const patientId = useExistingId || db.generatePatientId();
@@ -113,7 +113,7 @@ export const CreatePatient: React.FC = () => {
       reports: []
     };
 
-    db.savePatient(newPatient);
+    await db.savePatient(newPatient);
     alert(`Success! Patient Dashboard ID: ${patientId} has been successfully generated.`);
     navigate('/dashboard');
   };

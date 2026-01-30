@@ -17,9 +17,10 @@ export const HospitalPatientDashboard: React.FC = () => {
     setHospital(JSON.parse(stored));
 
     if (id) {
-      const p = db.getPatientById(id);
-      if (p) setPatient(p);
-      else navigate('/dashboard');
+      db.getPatientById(id).then(p => {
+        if (p) setPatient(p);
+        else navigate('/dashboard');
+      });
     }
   }, [id, navigate]);
 
@@ -82,6 +83,47 @@ export const HospitalPatientDashboard: React.FC = () => {
                   </div>
 
                   <div className="space-y-4">
+                    {/* Wound Report Layout */}
+                    {report.reportType === 'WOUND' && report.data && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black uppercase tracking-widest text-gray-400">Wound Capture</h5>
+                            {report.data.imageUrl ? (
+                              <div className="aspect-video bg-black rounded-2xl overflow-hidden shadow-md relative group">
+                                <img src={report.data.imageUrl} alt="Wound" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold uppercase tracking-widest">
+                                  View High-Res
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="h-40 bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center text-gray-400 font-bold">No Image Uploaded</div>
+                            )}
+                          </div>
+                          <div className="space-y-4">
+                            <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100 space-y-4">
+                              <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-orange-400 block mb-1">Target Location</label>
+                                <div className="text-lg font-black text-gray-900">{report.data.location || 'Unspecified'}</div>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-orange-400 block mb-1">Heal Stage (AI)</label>
+                                <div className="text-xl font-black text-orange-600">{report.data.stage || 'Analyzing...'}</div>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-orange-400 block mb-1">Confidence</label>
+                                <div className="text-sm font-bold text-gray-600">{report.data.confidence ? (report.data.confidence * 100).toFixed(1) + '%' : 'N/A'}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-xl text-sm text-gray-600 italic border border-gray-100">
+                          <span className="font-bold not-italic text-gray-400 uppercase text-xs mr-2">Patient Notes:</span>
+                          "{report.data.notes || 'No notes provided.'}"
+                        </div>
+                      </div>
+                    )}
+
                     {/* Vitals Report Layout */}
                     {report.reportType === 'VITALS' && report.data && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -95,7 +137,7 @@ export const HospitalPatientDashboard: React.FC = () => {
                         </div>
                         <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
                           <div className="text-xs font-black uppercase tracking-widest text-orange-400 mb-1">Stress</div>
-                          <div className="text-xl font-black text-orange-600">{report.data.stress}</div>
+                          <div className="text-xl font-black text-orange-600">{Number(report.data.stress).toFixed(2)}</div>
                         </div>
                         <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
                           <div className="text-xs font-black uppercase tracking-widest text-purple-400 mb-1">Resp. Rate</div>
@@ -103,22 +145,16 @@ export const HospitalPatientDashboard: React.FC = () => {
                         </div>
 
                         {/* Extended Params */}
-                        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                          <div className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-1">HRV (SDNN)</div>
-                          <div className="text-2xl font-black text-emerald-600">{report.data.hrv}<span className="text-sm text-gray-400">ms</span></div>
-                        </div>
                         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
                           <div className="text-xs font-black uppercase tracking-widest text-indigo-400 mb-1">Blood Pressure</div>
                           <div className="text-2xl font-black text-indigo-600">{report.data.bp}</div>
                         </div>
-                        <div className="bg-pink-50 p-4 rounded-2xl border border-pink-100">
-                          <div className="text-xs font-black uppercase tracking-widest text-pink-400 mb-1">Hemoglobin</div>
-                          <div className="text-2xl font-black text-pink-600">{report.data.hemoglobin}<span className="text-sm text-gray-400">g/dL</span></div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
-                          <div className="text-xs font-black uppercase tracking-widest text-red-400 mb-1">Skin Temp</div>
-                          <div className="text-2xl font-black text-red-600">{report.data.temperature}<span className="text-sm text-gray-400">°F</span></div>
-                        </div>
+                        {report.data.blinkRate && (
+                          <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                            <div className="text-xs font-black uppercase tracking-widest text-orange-400 mb-1">Blink Rate</div>
+                            <div className="text-2xl font-black text-orange-600">{report.data.blinkRate}<span className="text-sm text-gray-400">/min</span></div>
+                          </div>
+                        )}
                       </div>
                     )}
 
