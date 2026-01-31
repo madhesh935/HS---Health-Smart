@@ -24,7 +24,16 @@ export const HospitalPatientDashboard: React.FC = () => {
     }
   }, [id, navigate]);
 
-  if (!hospital || !patient) return null;
+  if (!hospital || !patient) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 bg-blue-200 rounded-full mb-3"></div>
+          <div className="text-blue-500 font-bold">Loading Patient Data...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Layout hospitalName={hospital.name}>
@@ -35,7 +44,7 @@ export const HospitalPatientDashboard: React.FC = () => {
           </button>
           <div>
             <h2 className="text-3xl font-black text-gray-900 tracking-tight">{patient.name}</h2>
-            <p className="text-gray-500 font-medium">Dashboard ID: {patient.id} • Registered {new Date(patient.createdAt).toLocaleDateString()}</p>
+            <p className="text-gray-500 font-medium">Dashboard ID: {patient.id} • Registered {new Date(patient.createdAt || Date.now()).toLocaleDateString()}</p>
           </div>
         </div>
 
@@ -43,13 +52,13 @@ export const HospitalPatientDashboard: React.FC = () => {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 md:col-span-1 text-center">
             <h4 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Risk Status</h4>
             <div className={`text-xl font-black uppercase px-4 py-2 rounded-xl inline-block ${patient.status === 'Stable' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-              {patient.status}
+              {patient.status || 'Stable'}
             </div>
           </div>
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 md:col-span-3">
             <h4 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4 px-2">Active Modules</h4>
             <div className="flex flex-wrap gap-3">
-              {Object.entries(patient.monitoringConfig).map(([key, value]) => (
+              {Object.entries(patient.monitoringConfig || {}).map(([key, value]) => (
                 value && key !== 'dailyStabilityCheck' && (
                   <span key={key} className="px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-black uppercase tracking-tight border border-blue-100">
                     {key}
@@ -72,8 +81,8 @@ export const HospitalPatientDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-6">
-              {[...patient.reports].reverse().map((report, idx) => (
-                <ReportCard key={report.id} report={report} patient={patient} idx={patient.reports!.length - idx} />
+              {[...(patient.reports || [])].reverse().map((report, idx) => (
+                <ReportCard key={report.id || idx} report={report} patient={patient} idx={(patient.reports?.length || 0) - idx} />
               ))}
             </div>
           )}

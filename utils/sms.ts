@@ -4,11 +4,16 @@ export const sendOTP = async (mobileNumber: string, otp: string): Promise<boolea
     try {
         // Call our local Backend Server (which handles the Textbelt API call)
         // This avoids CORS issues completely.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+
         const response = await fetch('http://localhost:3005/send-otp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mobile: mobileNumber, otp }),
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         const data = await response.json();
 

@@ -53,14 +53,38 @@ export const PatientHome: React.FC = () => {
 
     const initialPatient = JSON.parse(stored);
 
+    // Safety Defaults
+    if (!initialPatient.monitoringConfig) {
+      initialPatient.monitoringConfig = {
+        fever: false, wound: false, mobility: false, pain: false,
+        respiratory: false, swelling: false, dailyStabilityCheck: true
+      };
+    }
+    if (!initialPatient.reports) initialPatient.reports = [];
+    if (!initialPatient.messages) initialPatient.messages = [];
+
     // Initial load
     setPatient(initialPatient);
 
     const fetchLatestData = async () => {
       const freshData = await db.getPatientById(initialPatient.id);
       if (freshData) {
+        // Ensure defaults for critical fields to prevent render crash
+        if (!freshData.monitoringConfig) {
+          freshData.monitoringConfig = {
+            fever: false, wound: false, mobility: false, pain: false,
+            respiratory: false, swelling: false, dailyStabilityCheck: true
+          };
+        }
+        if (!freshData.reports) freshData.reports = [];
+        if (!freshData.messages) freshData.messages = [];
+
         setPatient(freshData);
-        sessionStorage.setItem('activePatient', JSON.stringify(freshData));
+        // Optimize Storage: Store only profile, not heavy report history
+        const { reports, ...lightData } = freshData;
+        try {
+          sessionStorage.setItem('activePatient', JSON.stringify(lightData));
+        } catch (e) { console.warn("Session update skipped"); }
 
         // Check submission
         // Check submission - Stability Check is once per day
@@ -84,6 +108,30 @@ export const PatientHome: React.FC = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [patient?.messages, showMessages]);
+
+  /* Reset Media State on Module Change */
+  useEffect(() => {
+    setVideoBlob(null);
+    setVideoUrl(null);
+    setAudioBlob(null);
+    setAudioUrl(null);
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+  }, [activeModule]);
+
+  /* Reset Media State on Module Change */
+  useEffect(() => {
+    setVideoBlob(null);
+    setVideoUrl(null);
+    setAudioBlob(null);
+    setAudioUrl(null);
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+  }, [activeModule]);
 
   const handleSendMessage = async () => {
     if (!messageInputValue.trim() || !patient) return;
@@ -169,6 +217,8 @@ export const PatientHome: React.FC = () => {
     }
   };
 
+
+
   const handleStabilitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!audioBlob || !patient) return;
@@ -202,12 +252,17 @@ export const PatientHome: React.FC = () => {
         status: 'Stable'
       };
 
-      // Sanitize report to remove undefined values (Firestore rejects undefined)
+      // Sanitize report to remove undefined values
       const sanitizedReport = JSON.parse(JSON.stringify(newReport));
+
+      // Filter existing reports to remove any corruption (nulls) and limit history
+      const validReports = (patient.reports || [])
+        .filter(r => r && typeof r === 'object' && Object.keys(r).length > 0)
+        .slice(-20);
 
       const updatedPatient = {
         ...patient,
-        reports: [...(patient.reports || []), sanitizedReport]
+        reports: [...validReports, sanitizedReport]
       };
 
       await db.savePatient(updatedPatient);
@@ -216,6 +271,12 @@ export const PatientHome: React.FC = () => {
 
       setIsSubmitting(false);
       setHasSubmittedToday(true);
+      // Clean up local media state
+      setAudioBlob(null);
+      setAudioUrl(null);
+      setVideoBlob(null);
+      setVideoUrl(null);
+
       alert('Clinical report submitted and saved successfully.');
     } catch (e: any) {
       console.error(e);
@@ -250,11 +311,13 @@ export const PatientHome: React.FC = () => {
       status: reportData.bpm > 100 || reportData.spo2 < 95 || (reportData.stress as number) > 70 ? 'Watch' : 'Stable'
     };
 
-    // Update Patient
-    const updatedPatient = {
-      ...patient,
-      reports: [...(patient.reports || []), JSON.parse(JSON.stringify(newReport))]
-    };
+    // Sanitize and save
+    const sanitizedReport = JSON.parse(JSON.stringify(newReport));
+    const validReports = (patient.reports || [])
+      .filter(r => r && typeof r === 'object' && Object.keys(r).length > 0)
+      .slice(-20);
+
+    const updatedPatient = { ...patient, reports: [...validReports, sanitizedReport] };
     await db.savePatient(updatedPatient);
     sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
     setPatient(updatedPatient);
@@ -282,10 +345,37 @@ export const PatientHome: React.FC = () => {
       });
     };
 
-    let videoBase64 = undefined;
+    let videoBase64: string | undefined = undefined;
+    let audioBase64: string | undefined = undefined;
+
     if (activeModule === 'FEVER' && videoBlob) {
       setIsSubmitting(true);
       videoBase64 = await blobToBase64(videoBlob);
+    }
+
+    // Respiratory Audio Handling
+    if (activeModule === 'RESPIRATORY' && (moduleData.audioBlob || moduleData.audioUrl)) { // Check URL too just in case
+      setIsSubmitting(true);
+      const blob = moduleData.audioBlob;
+      if (blob) {
+        audioBase64 = await blobToBase64(blob);
+
+        // Robust AI Call with Fallback
+        try {
+          const aiModule = await import('../utils/ai');
+          const result = await aiModule.analyzeBreathAudio(blob);
+          analysis = result.analysis;
+          if (result.quality !== 'Clear') status = 'Watch';
+          extendedData = { ...extendedData, ...result };
+        } catch (aiError) {
+          console.error("AI Import Failed:", aiError);
+          // Fallback Analysis
+          analysis = "Breath sample recorded. AI Analysis unavailable (Network/File Error).";
+        }
+      }
+      setIsSubmitting(false);
+    } else if (activeModule === 'RESPIRATORY' && !moduleData.audioBlob) {
+      analysis = "Values logged without audio sample.";
     }
 
     // Simple Rule-based Analysis for demo
@@ -313,8 +403,6 @@ export const PatientHome: React.FC = () => {
 
     } else if (activeModule === 'MOBILITY') {
       analysis = "Mobility target 80% achieved. Good physical activity progess.";
-    } else if (activeModule === 'RESPIRATORY') {
-      analysis = "Breathing pattern analysis: consistent rhythm detected. Lung capacity estimate: Normal.";
     }
 
     const newReport: StabilityReport = {
@@ -324,13 +412,45 @@ export const PatientHome: React.FC = () => {
       aiAnalysis: analysis,
       status: status,
       videoUrl: videoBase64, // Attach video if present
+      audioUrl: audioBase64, // Attach audio if present
       data: extendedData
     };
 
     try {
-      const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
-      await db.savePatient(updatedPatient);
-      sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
+      // Sanitize to remove undefined
+      const sanitizedReport = JSON.parse(JSON.stringify(newReport));
+
+      // STRICT Filtering: Keep only valid objects and LIMIT to last 20 to prevent 1MB storage overflow
+      const validReports = (patient.reports || [])
+        .filter(r => r && typeof r === 'object' && Object.keys(r).length > 0)
+        .slice(-20); // Keep last 20 reports max
+
+      const updatedPatient = { ...patient, reports: [...validReports, sanitizedReport] };
+
+      try {
+        await db.savePatient(updatedPatient);
+      } catch (saveError: any) {
+        // FALLBACK: If document is too large (Firestore 1MB limit), strip media and retry
+        if (saveError.message?.includes('size') || saveError.message?.includes('exceeds') || saveError.code === 'resource-exhausted') {
+          console.warn("Document too large, stripping media from report...");
+          delete sanitizedReport.audioUrl;
+          delete sanitizedReport.videoUrl;
+          sanitizedReport.aiAnalysis += " \n[NOTE: Audio/Video attachment removed to save storage space]";
+
+          const fallbackPatient = { ...patient, reports: [...validReports, sanitizedReport] };
+          await db.savePatient(fallbackPatient);
+          alert("Report saved (Media removed due to storage limit).");
+        } else {
+          throw saveError; // Re-throw other errors
+        }
+      }
+
+      try {
+        const { reports, ...lightData } = updatedPatient;
+        sessionStorage.setItem('activePatient', JSON.stringify(lightData));
+      } catch (e) {
+        console.warn("Session cache full, skipping local update");
+      }
       setPatient(updatedPatient);
 
       setActiveModule(null);
@@ -347,7 +467,18 @@ export const PatientHome: React.FC = () => {
     }
   };
 
-  if (!patient) return null;
+  if (!patient) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
+          <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </div>
+          <p className="text-gray-400 font-bold tracking-widest text-sm uppercase">Loading Profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   const FeatureCard = ({ icon, label, enabled, color, onClick }: { icon: React.ReactNode, label: string, enabled: boolean, color: string, onClick?: () => void }) => {
     if (!enabled) return null;
@@ -865,43 +996,70 @@ export const PatientHome: React.FC = () => {
 
               {activeModule === 'RESPIRATORY' && (
                 <div className="space-y-6 text-center">
-                  <div className="mx-auto w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-4">
-                    <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                  <div className="mx-auto w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-4 animate-pulse">
+                    <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
                   </div>
-                  <p className="text-blue-100 mb-4">Take a deep breath and exhale slowly. We will record for 10 seconds.</p>
+
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                    <h4 className="text-blue-900 font-black text-lg mb-2">Instructions</h4>
+                    <p className="text-blue-800 font-medium">Please <span className="font-extrabold uppercase">Inhale Deeply</span> and <span className="font-extrabold uppercase">Exhale Slowly</span> into the microphone for 10 seconds.</p>
+                  </div>
 
                   {!moduleData.audioUrl ? (
                     <button
                       onClick={async () => {
                         try {
                           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                          const recorder = new MediaRecorder(stream);
+                          const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 16000 }); // Low bitrate optimized for speech
                           let chunks: Blob[] = [];
                           recorder.ondataavailable = e => chunks.push(e.data);
-                          recorder.onstop = () => {
+
+                          recorder.onstop = async () => {
                             const blob = new Blob(chunks, { type: 'audio/webm' });
-                            setModuleData({ ...moduleData, audioUrl: URL.createObjectURL(blob), audioBlob: blob });
+                            const url = URL.createObjectURL(blob);
+                            // Pre-analyze here or wait for submit?
+                            // Let's autosave to moduleData
+                            setModuleData({ ...moduleData, audioUrl: url, audioBlob: blob, isAnalyzing: false }); // Reset
                             stream.getTracks().forEach(t => t.stop());
                           };
-                          recorder.start();
 
-                          // 10s Timer
+                          recorder.start();
+                          setModuleData({ ...moduleData, isRecording: true, timeLeft: 10 });
+
+                          // Countdown
+                          let count = 10;
+                          const timer = setInterval(() => {
+                            count--;
+                            setModuleData(prev => ({ ...prev, timeLeft: count }));
+                            if (count <= 0) clearInterval(timer);
+                          }, 1000);
+
+                          // Auto-stop at 10s
                           setTimeout(() => {
                             if (recorder.state === 'recording') recorder.stop();
+                            clearInterval(timer);
+                            setModuleData(prev => ({ ...prev, isRecording: false, timeLeft: 0 }));
                           }, 10000);
+
                         } catch (e) { alert('Mic access needed'); }
                       }}
-                      className="bg-white text-blue-600 px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:scale-105 transition-transform shadow-xl"
+                      disabled={moduleData.isRecording}
+                      className={`w-full px-8 py-6 rounded-2xl font-black uppercase tracking-widest shadow-xl transition-all flex flex-col items-center justify-center gap-2 ${moduleData.isRecording ? 'bg-rose-500 text-white animate-pulse' : 'bg-white text-blue-600 hover:scale-105'}`}
                     >
-                      Start 10s Recording
+                      {moduleData.isRecording ? (
+                        <>
+                          <span className="text-2xl">{moduleData.timeLeft}s</span>
+                          <span className="text-xs">Recording Breath Sounds...</span>
+                        </>
+                      ) : "Start 10s Breath Analysis"}
                     </button>
                   ) : (
                     <div className="space-y-4">
                       <div className="p-4 bg-white/10 rounded-xl border border-white/20">
-                        <p className="text-xs font-black uppercase tracking-widest mb-2">Recording Captured</p>
+                        <p className="text-xs font-black uppercase tracking-widest mb-2 text-blue-100">Audio Sample Captured</p>
                         <audio src={moduleData.audioUrl} controls className="w-full h-8" />
                       </div>
-                      <button onClick={() => setModuleData({})} className="text-sm font-bold underline opacity-80 hover:opacity-100">Retake</button>
+                      <button onClick={() => setModuleData({})} className="text-sm font-bold text-white underline opacity-80 hover:opacity-100">Discard & Retake</button>
                     </div>
                   )}
                 </div>

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
@@ -21,8 +20,13 @@ export const Dashboard: React.FC = () => {
     const h = JSON.parse(stored);
     setHospital(h);
     db.getPatients().then(allPatients => {
-      setPatients(allPatients.filter(p => p.hospitalId === h.id));
-    });
+      if (Array.isArray(allPatients)) {
+        setPatients(allPatients
+          .filter(p => p && p.hospitalId === h.id)
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        );
+      }
+    }).catch(err => console.error("Failed to load patients", err));
   }, [navigate]);
 
   /* Scroll ref for chat */
@@ -60,7 +64,16 @@ export const Dashboard: React.FC = () => {
     setMessageText('');
   };
 
-  if (!hospital) return null;
+  if (!hospital) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 bg-blue-200 rounded-full mb-3"></div>
+          <div className="text-blue-500 font-bold">Loading Hospital Portal...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Layout hospitalName={hospital.name}>
@@ -99,13 +112,13 @@ export const Dashboard: React.FC = () => {
                   {patients.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900">{p.name}</div>
-                        <div className="text-xs text-gray-500">{p.mobileNumber}</div>
+                        <div className="font-semibold text-gray-900">{p.name || 'Unknown Patient'}</div>
+                        <div className="text-xs text-gray-500">{p.mobileNumber || 'N/A'}</div>
                       </td>
                       <td className="px-6 py-4 font-mono text-sm text-blue-600">{p.id}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${p.status === 'Stable' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {p.status}
+                        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${(p.status || 'Stable') === 'Stable' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {p.status || 'Stable'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right space-x-3">

@@ -138,3 +138,24 @@ export const analyzeWoundImage = async (imageUrl: string, notes: string): Promis
         }, 2000);
     });
 };
+
+export const analyzeBreathAudio = async (audioBlob: Blob): Promise<{ analysis: string; rate: number; quality: string }> => {
+    // Simulating Audio Analysis (FFT/Spectrogram analysis mock)
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const qualities = [
+                { type: "Clear", text: "Breath sounds are clear. No wheezing or crackles detected." },
+                { type: "Mild Wheeze", text: "Slight high-pitched sound detected during exhalation. Monitor closely." },
+                { type: "Clear", text: "Vesicular breath sounds normal. Good airflow." }
+            ];
+            const result = qualities[Math.floor(Math.random() * qualities.length)];
+            const rate = Math.floor(Math.random() * (20 - 12 + 1) + 12);
+
+            resolve({
+                analysis: `AI AUDIO ANALYSIS: ${result.text} Estimated Rate: ${rate} breaths/min.`,
+                rate: rate,
+                quality: result.type
+            });
+        }, 2500);
+    });
+};

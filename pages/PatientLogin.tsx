@@ -28,7 +28,7 @@ export const PatientLogin: React.FC = () => {
         setGeneratedOtp(mockOtp);
 
         // Mask mobile number
-        const mobile = patient.mobileNumber;
+        const mobile = patient.mobileNumber || 'XXXXXXXXXX';
         const masked = mobile.length > 4 ? '*'.repeat(mobile.length - 4) + mobile.slice(-4) : mobile;
         setMaskedMobile(masked);
 
@@ -55,8 +55,21 @@ export const PatientLogin: React.FC = () => {
       setIsLoading(false);
       if (otp.trim() === generatedOtp) {
         const patient = await db.getPatientById(patientId.trim().toUpperCase());
-        sessionStorage.setItem('activePatient', JSON.stringify(patient));
-        navigate('/patient/home');
+
+        // OPTIMIZATION: Prevent "Quota Exceeded" by NOT storing report history in Session Storage
+        // The PatientHome component fetches fresh data from DB anyway.
+        if (patient) {
+          const safeSessionData = { ...patient, reports: [] };
+          try {
+            sessionStorage.clear(); // Clear old data to free space
+            sessionStorage.setItem('activePatient', JSON.stringify(safeSessionData));
+            navigate('/patient/home');
+          } catch (storageError) {
+            console.error("Session Storage Full", storageError);
+            alert("Login successful, but browser storage is full. Some offline features may be limited.");
+            navigate('/patient/home');
+          }
+        }
       } else {
         alert('Invalid OTP. Access Denied.');
       }
