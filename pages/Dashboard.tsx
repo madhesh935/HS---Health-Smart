@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Hospital, Patient } from '../types';
 import { db } from '../db';
+import { generatePatientReport } from '../utils/reportGenerator';
+
 
 export const Dashboard: React.FC = () => {
   const [hospital, setHospital] = useState<Hospital | null>(null);
@@ -37,6 +39,27 @@ export const Dashboard: React.FC = () => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [selectedPatient?.messages]);
+
+  const handleToggleDischarge = async (patient: Patient) => {
+    if (patient.isDischarged) {
+      if (window.confirm(`Reactivate patient ${patient.name}? They will regain access to the portal.`)) {
+        const updated = { ...patient, isDischarged: false, status: 'Stable' as const };
+        await db.savePatient(updated);
+        setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
+      }
+    } else {
+      if (window.confirm(`Discharge patient ${patient.name}? Checks will be paused and portal access disabled.`)) {
+        let updated = { ...patient, isDischarged: true, dischargedAt: Date.now() };
+
+        if (window.confirm("Generate final discharge report (PDF)?")) {
+          generatePatientReport(patient);
+        }
+
+        await db.savePatient(updated);
+        setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
+      }
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!selectedPatient || !messageText.trim()) return;
@@ -117,11 +140,23 @@ export const Dashboard: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 font-mono text-sm text-blue-600">{p.id}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${(p.status || 'Stable') === 'Stable' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {p.status || 'Stable'}
+                        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${p.isDischarged
+                          ? 'bg-gray-100 text-gray-500 border border-gray-200'
+                          : (p.status || 'Stable') === 'Stable' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                          {p.isDischarged ? 'Discharged' : (p.status || 'Stable')}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right space-x-3">
+                        <button
+                          onClick={() => handleToggleDischarge(p)}
+                          className={`font-bold text-xs uppercase tracking-wide px-3 py-1 rounded-lg border transition-all ${p.isDischarged
+                            ? 'text-green-600 border-green-200 hover:bg-green-50'
+                            : 'text-amber-600 border-amber-200 hover:bg-amber-50'
+                            }`}
+                        >
+                          {p.isDischarged ? 'Reactivate' : 'Discharge'}
+                        </button>
                         <button
                           onClick={() => setSelectedPatient(p)}
                           className="text-indigo-600 hover:text-indigo-800 font-semibold text-sm"

@@ -8,7 +8,7 @@ import { sendOTP } from '../utils/sms';
 
 type Step = 'FORM' | 'OTP' | 'CHECK' | 'CONFIG';
 
-const DISABILITY_OPTIONS = ['None', 'Visual Impairment', 'Hearing Impairment', 'Mobility Issues', 'Cognitive', 'Other'];
+
 
 export const CreatePatient: React.FC = () => {
   const navigate = useNavigate();
@@ -24,7 +24,7 @@ export const CreatePatient: React.FC = () => {
     disabilityStatus: 'None',
     reasonForMonitoring: '',
     mobileNumber: '',
-    preferredLanguage: 'English' as 'English' | 'Tamil'
+    preferredLanguage: 'English' as 'English'
   });
 
   // OTP State
@@ -190,7 +190,7 @@ export const CreatePatient: React.FC = () => {
                 <div>
                   <label className="block text-sm font-black text-gray-700 mb-4 uppercase tracking-wider">Interface Language *</label>
                   <div className="grid grid-cols-2 gap-4">
-                    {['English', 'Tamil'].map(lang => (
+                    {['English'].map(lang => (
                       <button
                         key={lang}
                         type="button"
@@ -230,21 +230,13 @@ export const CreatePatient: React.FC = () => {
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-black text-gray-700 mb-4 uppercase tracking-wider">Disability Profile</label>
-                  <div className="flex flex-wrap gap-3">
-                    {DISABILITY_OPTIONS.map(status => (
-                      <button
-                        key={status}
-                        type="button"
-                        onClick={() => setPatientData({ ...patientData, disabilityStatus: status })}
-                        className={`px-6 py-4 rounded-2xl text-base font-bold border-2 transition-all ${patientData.disabilityStatus === status
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-xl scale-105'
-                          : 'bg-gray-50/50 border-gray-100 text-gray-600 hover:border-gray-200'
-                          }`}
-                      >
-                        {status}
-                      </button>
-                    ))}
-                  </div>
+                  <input
+                    type="text"
+                    value={patientData.disabilityStatus === 'None' ? '' : patientData.disabilityStatus}
+                    onChange={e => setPatientData({ ...patientData, disabilityStatus: e.target.value || 'None' })}
+                    className="w-full px-6 py-5 rounded-2xl border-2 border-gray-200 focus:border-blue-500 outline-none transition-all text-xl bg-gray-50/50 text-gray-900 font-bold placeholder:text-gray-400"
+                    placeholder="e.g. Visual Impairment, None"
+                  />
                 </div>
               </div>
 

@@ -24,6 +24,12 @@ export const PatientLogin: React.FC = () => {
       const patient = await db.getPatientById(patientId.trim().toUpperCase());
 
       if (patient) {
+        if (patient.isDischarged) {
+          setIsLoading(false);
+          alert('This account has been deactivated (Discharged). Please contact your hospital for access.');
+          return;
+        }
+
         const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
         setGeneratedOtp(mockOtp);
 

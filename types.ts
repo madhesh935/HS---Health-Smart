@@ -42,6 +42,8 @@ export interface Patient {
   createdAt: number;
   reports: StabilityReport[]; // History of submissions
   messages?: ChatMessage[]; // Two-way chat history
+  isDischarged?: boolean;
+  dischargedAt?: number;
 }
 
 export interface MonitoringConfig {

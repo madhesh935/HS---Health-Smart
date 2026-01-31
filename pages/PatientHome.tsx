@@ -420,22 +420,36 @@ export const PatientHome: React.FC = () => {
       // Sanitize to remove undefined
       const sanitizedReport = JSON.parse(JSON.stringify(newReport));
 
-      // STRICT Filtering: Keep only valid objects and LIMIT to last 20 to prevent 1MB storage overflow
+      // AGGRESSIVE STORAGE OPTIMIZATION:
+      // Firestore has a 1MB limit. Base64 audio/video is heavy.
+      // We will:
+      // 1. Keep only the last 15 reports total.
+      // 2. STRIP media (audio/video) from ALL previous reports to save space.
+      //    We only keep media for the *current* newly submitted report.
+
       const validReports = (patient.reports || [])
         .filter(r => r && typeof r === 'object' && Object.keys(r).length > 0)
-        .slice(-20); // Keep last 20 reports max
+        .slice(-15) // Keep max 15
+        .map(r => {
+          // Create a copy and remove heavy media from history
+          const textOnly = { ...r };
+          delete textOnly.audioUrl;
+          delete textOnly.videoUrl;
+          return textOnly;
+        });
 
+      // Append the NEW report (which holds the media)
       const updatedPatient = { ...patient, reports: [...validReports, sanitizedReport] };
 
       try {
         await db.savePatient(updatedPatient);
       } catch (saveError: any) {
-        // FALLBACK: If document is too large (Firestore 1MB limit), strip media and retry
+        // FALLBACK: If LIMIT HIT even after stripping old history, strip current media too.
         if (saveError.message?.includes('size') || saveError.message?.includes('exceeds') || saveError.code === 'resource-exhausted') {
-          console.warn("Document too large, stripping media from report...");
+          console.warn("Document still too large, saving text-only version...");
           delete sanitizedReport.audioUrl;
           delete sanitizedReport.videoUrl;
-          sanitizedReport.aiAnalysis += " \n[NOTE: Audio/Video attachment removed to save storage space]";
+          sanitizedReport.aiAnalysis += " \n[NOTE: Audio/Video removed. Storage quota exceeded.]";
 
           const fallbackPatient = { ...patient, reports: [...validReports, sanitizedReport] };
           await db.savePatient(fallbackPatient);
