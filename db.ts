@@ -1,56 +1,77 @@
 import { Hospital, Patient } from './types';
-
-const API_URL = 'http://localhost:3005/api';
+import { db as firestore } from './utils/firebaseConfig';
+import { collection, getDocs, doc, setDoc, getDoc, query, where } from 'firebase/firestore';
 
 export const db = {
   getHospitals: async (): Promise<Hospital[]> => {
     try {
-      const res = await fetch(`${API_URL}/hospitals`);
-      if (!res.ok) return [];
-      return await res.json();
-    } catch (e) { console.error(e); return []; }
+      const snapshot = await getDocs(collection(firestore, 'hospitals'));
+      return snapshot.docs.map(d => d.data() as Hospital);
+    } catch (e) {
+      console.error("Error fetching hospitals:", e);
+      return [];
+    }
   },
   saveHospital: async (hospital: Hospital) => {
-    await fetch(`${API_URL}/hospitals`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(hospital)
-    });
+    try {
+      const safeData = JSON.parse(JSON.stringify(hospital));
+      await setDoc(doc(firestore, 'hospitals', hospital.id), safeData);
+    } catch (e) {
+      console.error("Error saving hospital:", e);
+      throw e; // Bubble up error
+    }
   },
   getHospitalById: async (id: string): Promise<Hospital | undefined> => {
-    const hospitals = await db.getHospitals();
-    return hospitals.find(h => h.id === id);
+    try {
+      const snap = await getDoc(doc(firestore, 'hospitals', id));
+      if (snap.exists()) return snap.data() as Hospital;
+      return undefined;
+    } catch (e) {
+      console.error("Error fetching hospital by ID:", e);
+      throw e;
+    }
   },
   getPatients: async (): Promise<Patient[]> => {
     try {
-      const res = await fetch(`${API_URL}/patients`);
-      if (!res.ok) return [];
-      return await res.json();
-    } catch (e) { console.error(e); return []; }
+      const snapshot = await getDocs(collection(firestore, 'patients'));
+      return snapshot.docs.map(d => d.data() as Patient);
+    } catch (e) {
+      console.error("Error fetching patients:", e);
+      throw e;
+    }
   },
   getPatientById: async (id: string): Promise<Patient | undefined> => {
-    const patients = await db.getPatients();
-    return patients.find(p => p.id === id);
+    try {
+      const snap = await getDoc(doc(firestore, 'patients', id));
+      if (snap.exists()) return snap.data() as Patient;
+      return undefined;
+    } catch (e) {
+      console.error("Error fetching patient by ID:", e);
+      throw e;
+    }
   },
   getPatientsByMobile: async (mobile: string): Promise<Patient[]> => {
-    const patients = await db.getPatients();
-    return patients.filter(p => p.mobileNumber === mobile);
+    try {
+      const q = query(collection(firestore, 'patients'), where("mobileNumber", "==", mobile));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(d => d.data() as Patient);
+    } catch (e) {
+      console.error("Error fetching patients by mobile:", e);
+      throw e;
+    }
   },
   savePatient: async (patient: Patient) => {
-    // Check if update or create
-    const patients = await db.getPatients();
-    const needsUpdate = patients.some(p => p.id === patient.id);
-
-    const url = needsUpdate ? `${API_URL}/patients/${patient.id}` : `${API_URL}/patients`;
-    const method = needsUpdate ? 'PUT' : 'POST';
-
-    await fetch(url, {
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patient)
-    });
+    try {
+      const safeData = JSON.parse(JSON.stringify(patient));
+      await setDoc(doc(firestore, 'patients', patient.id), safeData);
+    } catch (e) {
+      console.error("Error saving patient:", e);
+      throw e;
+    }
   },
   generatePatientId: (): string => {
+    // Generate a random ID, but ensuring uniqueness is better handled by Firestore auto-id if possible.
+    // Sticking to current format for compatibility.
     return 'PAT-' + Math.random().toString(36).substr(2, 6).toUpperCase();
   }
 };

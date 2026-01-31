@@ -32,82 +32,10 @@ if (!process.env.TWILIO_PHONE_NUMBER) {
     console.warn('Update your .env file with that number and restart the server.');
 }
 
-// DATABASE SETUP
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// DATABASE SETUP REMOVED - Using Firebase Firestore Direct Client Access
+// This server now strictly handles 3rd party API secrets (Twilio/Textbelt)
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DB_FILE = path.join(__dirname, 'database.json');
-
-// Initialize DB if not exists
-const initDB = () => {
-    if (!fs.existsSync(DB_FILE)) {
-        const initialData = { hospitals: [], patients: [] };
-        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
-    }
-};
-initDB();
-
-const readDB = () => {
-    try {
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch (err) {
-        return { hospitals: [], patients: [] };
-    }
-};
-
-const writeDB = (data) => {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-};
-
-// API ENDPOINTS
-app.get('/api/hospitals', (req, res) => {
-    const db = readDB();
-    res.json(db.hospitals);
-});
-
-app.post('/api/hospitals', (req, res) => {
-    const db = readDB();
-    const newHospital = req.body;
-    // Check duplicate
-    if (db.hospitals.find(h => h.id === newHospital.id)) {
-        return res.status(409).json({ error: 'Hospital ID exists' });
-    }
-    db.hospitals.push(newHospital);
-    writeDB(db);
-    res.json({ success: true, hospital: newHospital });
-});
-
-app.get('/api/patients', (req, res) => {
-    const db = readDB();
-    res.json(db.patients);
-});
-
-app.post('/api/patients', (req, res) => {
-    const db = readDB();
-    const newPatient = req.body;
-    db.patients.push(newPatient);
-    writeDB(db);
-    res.json({ success: true, patient: newPatient });
-});
-
-app.put('/api/patients/:id', (req, res) => {
-    const db = readDB();
-    const { id } = req.params;
-    const updatedPatient = req.body;
-    const index = db.patients.findIndex(p => p.id === id);
-
-    if (index !== -1) {
-        db.patients[index] = updatedPatient;
-        writeDB(db);
-        res.json({ success: true, patient: updatedPatient });
-    } else {
-        res.status(404).json({ error: 'Patient not found' });
-    }
-});
+// SMS ROUTES (Keep Existing)
 
 // SMS ROUTES (Keep Existing)
 app.post('/send-otp', async (req, res) => {

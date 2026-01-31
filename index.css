@@ -1,9 +1,128 @@
 @import "tailwindcss";
 
 @theme {
-    --font-sans: 'Inter', sans-serif;
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --color-medical-teal: #0d9488;
+    --color-medical-cyan: #06b6d4;
+    --color-medical-blue: #0ea5e9;
+    --color-medical-slate: #f8fafc;
 }
 
 :root {
     color-scheme: light;
+}
+
+body {
+    @apply bg-slate-50 text-slate-800 font-sans antialiased overflow-x-hidden;
+    background-color: #f0fdfa;
+    /* Teal-50 base */
+    background-image:
+        radial-gradient(at 0% 0%, rgba(13, 148, 136, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(14, 165, 233, 0.15) 0px, transparent 50%),
+        radial-gradient(at 0% 100%, rgba(13, 148, 136, 0.15) 0px, transparent 50%);
+    background-attachment: fixed;
+}
+
+/* Medical Cross Pattern Overlay */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.03;
+    pointer-events: none;
+    background-image:
+        linear-gradient(#0d9488 2px, transparent 2px),
+        linear-gradient(90deg, #0d9488 2px, transparent 2px);
+    background-size: 40px 40px;
+    background-position: center center;
+}
+
+/* Floating Medical Symbols Animation */
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0) rotate(0deg);
+    }
+
+    50% {
+        transform: translateY(-20px) rotate(5deg);
+    }
+}
+
+/* Glassmorphism Utilities */
+.glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/40 shadow-xl;
+}
+
+.glass-card {
+    @apply bg-white/80 backdrop-blur-sm border border-slate-100 shadow-lg hover:shadow-xl transition-all duration-300 rounded-[2rem];
+}
+
+/* Typography Tweaks */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    @apply tracking-tight text-slate-900;
+}
+
+/* Button Refinements */
+button {
+    @apply active:scale-95 transition-transform duration-100;
+}
+
+/* Scrollbar Polish */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-slate-50;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-teal-200 rounded-full hover:bg-teal-300 transition-colors;
+}
+
+/* Custom Animation Classes */
+.animate-float {
+    animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Form Elements */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+    @apply bg-white border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all rounded-xl;
+}
+
+/* Status Indicators */
+.status-badge {
+    @apply px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest shadow-sm border;
+}
+
+.status-stable {
+    @apply bg-emerald-50 text-emerald-700 border-emerald-100;
+}
+
+.status-watch {
+    @apply bg-amber-50 text-amber-700 border-amber-100;
+}
+
+.status-critical {
+    @apply bg-rose-50 text-rose-700 border-rose-100;
 }

@@ -13,12 +13,17 @@ export const Login: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    const hospital = await db.getHospitalById(hospitalId);
-    if (hospital && hospital.password === password) {
-      sessionStorage.setItem('activeHospital', JSON.stringify(hospital));
-      navigate('/dashboard');
-    } else {
-      setError('Invalid Hospital ID or Password');
+    try {
+      const hospital = await db.getHospitalById(hospitalId);
+      if (hospital && hospital.password === password) {
+        sessionStorage.setItem('activeHospital', JSON.stringify(hospital));
+        navigate('/dashboard');
+      } else {
+        setError('Invalid Hospital ID or Password');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Login Error: ' + (err.message || 'Connection failed'));
     }
   };
 

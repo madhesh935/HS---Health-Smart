@@ -23,7 +23,7 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-          <button 
+          <button
             onClick={() => navigate('/login')}
             className="group relative bg-white p-10 rounded-[2.5rem] shadow-xl border-4 border-transparent hover:border-blue-600 transition-all duration-300 flex flex-col items-center text-center space-y-6"
           >
@@ -43,7 +43,7 @@ export const HomePage: React.FC = () => {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => navigate('/patient/login')}
             className="group relative bg-white p-10 rounded-[2.5rem] shadow-xl border-4 border-transparent hover:border-indigo-600 transition-all duration-300 flex flex-col items-center text-center space-y-6"
           >

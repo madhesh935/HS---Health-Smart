@@ -185,22 +185,29 @@ export const PatientHome: React.FC = () => {
     };
 
     // Convert media
-    const audioDataUrl = audioBlob ? await blobToBase64(audioBlob) : undefined;
-    const videoDataUrl = videoBlob ? await blobToBase64(videoBlob) : undefined;
+    const audioDataUrl = audioBlob ? await blobToBase64(audioBlob) : null;
+    const videoDataUrl = videoBlob ? await blobToBase64(videoBlob) : null;
 
-    setTimeout(async () => {
+    // Simulate AI Processing Delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
       const newReport: StabilityReport = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: Date.now(),
-        audioUrl: audioDataUrl,
-        videoUrl: videoDataUrl,
+        reportType: 'STABILITY',
+        audioUrl: audioDataUrl || null,
+        videoUrl: videoDataUrl || null,
         aiAnalysis: "AI Analysis: Patient speech rhythm is steady. Visual recovery markers appear within normal post-operative range.",
         status: 'Stable'
       };
 
+      // Sanitize report to remove undefined values (Firestore rejects undefined)
+      const sanitizedReport = JSON.parse(JSON.stringify(newReport));
+
       const updatedPatient = {
         ...patient,
-        reports: [...(patient.reports || []), newReport]
+        reports: [...(patient.reports || []), sanitizedReport]
       };
 
       await db.savePatient(updatedPatient);
@@ -209,8 +216,12 @@ export const PatientHome: React.FC = () => {
 
       setIsSubmitting(false);
       setHasSubmittedToday(true);
-      alert('Clinical report submitted and saved.');
-    }, 1000);
+      alert('Clinical report submitted and saved successfully.');
+    } catch (e: any) {
+      console.error(e);
+      setIsSubmitting(false);
+      alert(`Failed to save report: ${e.message || 'Unknown Error'}`);
+    }
   };
 
   const handleScanComplete = async (data: any) => {
@@ -240,7 +251,10 @@ export const PatientHome: React.FC = () => {
     };
 
     // Update Patient
-    const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
+    const updatedPatient = {
+      ...patient,
+      reports: [...(patient.reports || []), JSON.parse(JSON.stringify(newReport))]
+    };
     await db.savePatient(updatedPatient);
     sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
     setPatient(updatedPatient);
@@ -259,11 +273,30 @@ export const PatientHome: React.FC = () => {
     let status: 'Stable' | 'Watch' | 'Critical' = 'Stable';
     let extendedData = { ...moduleData };
 
+    // Helper for Blob conversion
+    const blobToBase64 = (blob: Blob): Promise<string> => {
+      return new Promise((resolve, _) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    };
+
+    let videoBase64 = undefined;
+    if (activeModule === 'FEVER' && videoBlob) {
+      setIsSubmitting(true);
+      videoBase64 = await blobToBase64(videoBlob);
+    }
+
     // Simple Rule-based Analysis for demo
     if (activeModule === 'FEVER') {
       const temp = parseFloat(moduleData.temp || "98.6");
-      if (temp > 100.4) { status = 'Watch'; analysis = `AI Alert: Fever detected (${temp}°F). Hydration and rest recommended.`; }
-      else analysis = `Temperature Normal (${temp}°F). No fever signs.`;
+      if (temp > 100.4) {
+        status = 'Watch';
+        analysis = `AI Alert: Fever detected (${temp}°F). Hydration and rest recommended. Visual Analysis: Video attached for clinical review.`;
+      } else {
+        analysis = `Temperature Normal (${temp}°F). No fever signs. Visual Analysis: Patient appears stable in video feed.`;
+      }
     } else if (activeModule === 'PAIN') {
       const level = parseInt(moduleData.level || "0");
       if (level > 6) { status = 'Watch'; analysis = `High pain level (${level}/10) reported. Nurse notification recommended.`; }
@@ -290,17 +323,28 @@ export const PatientHome: React.FC = () => {
       reportType: activeModule,
       aiAnalysis: analysis,
       status: status,
+      videoUrl: videoBase64, // Attach video if present
       data: extendedData
     };
 
-    const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
-    await db.savePatient(updatedPatient);
-    sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
-    setPatient(updatedPatient);
+    try {
+      const updatedPatient = { ...patient, reports: [...(patient.reports || []), newReport] };
+      await db.savePatient(updatedPatient);
+      sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
+      setPatient(updatedPatient);
 
-    setActiveModule(null);
-    setModuleData({});
-    alert(`${activeModule} Report Logged.`);
+      setActiveModule(null);
+      setModuleData({});
+      // Reset Video State
+      setVideoBlob(null);
+      setVideoUrl(null);
+      setIsSubmitting(false); // Ensure this is off
+      alert(`${activeModule} Report Logged Successfully.`);
+    } catch (e: any) {
+      console.error(e);
+      setIsSubmitting(false);
+      alert(`Failed to save ${activeModule} report: ${e.message || 'Unknown Error'}`);
+    }
   };
 
   if (!patient) return null;
@@ -724,6 +768,30 @@ export const PatientHome: React.FC = () => {
                       {['Chills', 'Sweating', 'Headache', 'Nausea'].map(s => (
                         <button key={s} onClick={() => setModuleData({ ...moduleData, symptoms: [...(moduleData.symptoms || []), s] })} className="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-bold hover:bg-rose-100 hover:text-rose-600 transition-colors">{s}</button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Fever Video Recorder */}
+                  <div className="pt-4 border-t border-gray-100">
+                    <label className="block text-xs font-black uppercase tracking-widest text-gray-500 mb-3">Video Check-in (Optional)</label>
+                    <div className={`p-4 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center space-y-4 ${videoBlob ? 'border-rose-400 bg-rose-50' : 'border-gray-200'}`}>
+                      {isRecordingVideo ? (
+                        <div className="w-full flex flex-col items-center gap-3">
+                          <video ref={videoPreviewRef} autoPlay muted className="w-full h-32 object-cover bg-black rounded-xl shadow-lg border border-rose-500" />
+                          <div className="text-xs text-rose-500 font-black animate-pulse">Recording...</div>
+                          <button onClick={stopVideoRecording} className="bg-rose-500 text-white px-6 py-2 rounded-xl font-bold text-xs">Stop</button>
+                        </div>
+                      ) : videoUrl ? (
+                        <div className="w-full text-center space-y-2">
+                          <video src={videoUrl} controls className="w-full h-32 object-cover rounded-xl bg-black" />
+                          <button onClick={() => { setVideoBlob(null); setVideoUrl(null); }} className="text-[10px] font-bold text-rose-500 underline uppercase">Retake</button>
+                        </div>
+                      ) : (
+                        <button onClick={startVideoRecording} className="flex items-center gap-2 text-gray-400 hover:text-rose-500 transition-colors">
+                          <div className="p-3 bg-gray-100 rounded-full"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></div>
+                          <span className="text-xs font-black uppercase tracking-widest">Record Status Video</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

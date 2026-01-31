@@ -20,24 +20,31 @@ export const PatientLogin: React.FC = () => {
     // Verification delay
     await new Promise(resolve => setTimeout(resolve, 800));
 
-    const patient = await db.getPatientById(patientId.trim().toUpperCase());
-    if (patient) {
-      const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(mockOtp);
+    try {
+      const patient = await db.getPatientById(patientId.trim().toUpperCase());
 
-      // Mask mobile number
-      const mobile = patient.mobileNumber;
-      const masked = mobile.length > 4 ? '*'.repeat(mobile.length - 4) + mobile.slice(-4) : mobile;
-      setMaskedMobile(masked);
+      if (patient) {
+        const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(mockOtp);
 
-      // Send OTP via SMS
-      await sendOTP(patient.mobileNumber, mockOtp);
+        // Mask mobile number
+        const mobile = patient.mobileNumber;
+        const masked = mobile.length > 4 ? '*'.repeat(mobile.length - 4) + mobile.slice(-4) : mobile;
+        setMaskedMobile(masked);
 
+        // Send OTP via SMS
+        await sendOTP(patient.mobileNumber, mockOtp);
+
+        setIsLoading(false);
+        setStep('OTP');
+      } else {
+        setIsLoading(false);
+        alert('Invalid Patient Dashboard ID. Please check and try again.');
+      }
+    } catch (e: any) {
+      console.error(e);
       setIsLoading(false);
-      setStep('OTP');
-    } else {
-      setIsLoading(false);
-      alert('Invalid Patient Dashboard ID. Please check and try again.');
+      alert(`Login Error: ${e.message || 'Connection failed'}`);
     }
   };
 
