@@ -8,18 +8,21 @@ const isOpenRouter = (key: string) => key.includes('sk-or-v1');
 export const chatWithAI = async (
     systemPrompt: string,
     history: { role: 'user' | 'model'; text: string }[],
-    newMessage: string
+    newMessage: string,
+    audioBase64?: string
 ): Promise<string> => {
     if (!apiKey) throw new Error("API Key missing");
 
-    // OpenRouter Logic
+    // OpenRouter Logic (Text Only Fallback if audio present)
     if (isOpenRouter(apiKey)) {
+        if (audioBase64) return "Voice notes are only supported with Google Gemini direct integration.";
+
         const modelsToTry = [
             "google/gemini-2.0-flash-001",
             "google/gemini-flash-1.5",
             "mistralai/mistral-7b-instruct:free"
         ];
-
+        // ... (rest of OpenRouter logic same as before)
         for (const model of modelsToTry) {
             try {
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -54,11 +57,11 @@ export const chatWithAI = async (
         throw new Error("All AI models failed to respond.");
     }
 
-    // Google AI Studio Logic
+    // Google AI Studio Logic (Supports Multimodal)
     else {
         try {
             const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Use flash for speed/multimodal
 
             // Construct history including system prompt as first user message (shim)
             const chatHistory = [
@@ -71,7 +74,26 @@ export const chatWithAI = async (
             ];
 
             const chat = model.startChat({ history: chatHistory });
-            const result = await chat.sendMessage(newMessage);
+
+            // Send Message with Audio if present
+            let result;
+            if (audioBase64) {
+                // Clean base64 if it has prefix
+                const cleanBase64 = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
+
+                result = await chat.sendMessage([
+                    newMessage || "Please analyze this audio message.",  // Ensure text part exists
+                    {
+                        inlineData: {
+                            mimeType: "audio/mp3", // Assuming MP3/WebM conversion or generic handling
+                            data: cleanBase64
+                        }
+                    }
+                ]);
+            } else {
+                result = await chat.sendMessage(newMessage);
+            }
+
             const response = await result.response;
             return response.text();
         } catch (e) {

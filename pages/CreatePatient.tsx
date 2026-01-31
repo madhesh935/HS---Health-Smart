@@ -16,6 +16,7 @@ export const CreatePatient: React.FC = () => {
   const [step, setStep] = useState<Step>('FORM');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form State
   const [patientData, setPatientData] = useState({
@@ -92,30 +93,38 @@ export const CreatePatient: React.FC = () => {
 
   const finalizePatientCreation = async (useExistingId?: string) => {
     if (!hospital) return;
+    setIsSaving(true);
 
-    const patientId = useExistingId || db.generatePatientId();
+    try {
+      const patientId = useExistingId || db.generatePatientId();
 
-    // Added missing 'reports' property to match the Patient interface
-    const newPatient: Patient = {
-      id: patientId,
-      name: patientData.name,
-      age: parseInt(patientData.age),
-      disabilityStatus: patientData.disabilityStatus,
-      medicalConditions: 'Not Specified', // Default as the section was removed
-      reasonForMonitoring: patientData.reasonForMonitoring,
-      mobileNumber: patientData.mobileNumber,
-      preferredLanguage: patientData.preferredLanguage,
-      hospitalId: hospital.id,
-      hospitalName: hospital.name,
-      monitoringConfig: config,
-      status: 'Stable',
-      createdAt: Date.now(),
-      reports: []
-    };
+      // Added missing 'reports' property to match the Patient interface
+      const newPatient: Patient = {
+        id: patientId,
+        name: patientData.name,
+        age: parseInt(patientData.age),
+        disabilityStatus: patientData.disabilityStatus,
+        medicalConditions: 'Not Specified', // Default as the section was removed
+        reasonForMonitoring: patientData.reasonForMonitoring,
+        mobileNumber: patientData.mobileNumber,
+        preferredLanguage: patientData.preferredLanguage,
+        hospitalId: hospital.id,
+        hospitalName: hospital.name,
+        monitoringConfig: config,
+        status: 'Stable',
+        createdAt: Date.now(),
+        reports: []
+      };
 
-    await db.savePatient(newPatient);
-    alert(`Success! Patient Dashboard ID: ${patientId} has been successfully generated.`);
-    navigate('/dashboard');
+      await db.savePatient(newPatient);
+      alert(`Success! Patient Dashboard ID: ${patientId} has been successfully generated.`);
+      navigate('/dashboard');
+    } catch (error) {
+      console.error("Failed to save patient:", error);
+      alert("Failed to save patient data. Please checks your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!hospital) return null;
@@ -417,9 +426,17 @@ export const CreatePatient: React.FC = () => {
 
               <button
                 onClick={() => finalizePatientCreation()}
-                className="w-full bg-blue-600 text-white font-black py-7 px-10 rounded-[2rem] hover:bg-blue-700 transition-all shadow-2xl shadow-blue-300 text-2xl uppercase tracking-widest"
+                disabled={isSaving}
+                className={`w-full bg-blue-600 text-white font-black py-7 px-10 rounded-[2rem] hover:bg-blue-700 transition-all shadow-2xl shadow-blue-300 text-2xl uppercase tracking-widest flex justify-center items-center gap-4 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
               >
-                Launch Monitoring Dashboard
+                {isSaving ? (
+                  <>
+                    <div className="w-6 h-6 border-4 border-blue-300 border-t-white rounded-full animate-spin"></div>
+                    <span>Saving Profile...</span>
+                  </>
+                ) : (
+                  <span>Launch Monitoring Dashboard</span>
+                )}
               </button>
             </div>
           )}

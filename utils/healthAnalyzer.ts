@@ -99,7 +99,10 @@ export const healthAnalyzer = {
     /**
      * Estimate Vitals based on Landmarks (Movement/Tension) + Signal
      */
-    estimateVitals: (landmarks: any[], timeMs: number, greenSignal: number = 0) => {
+    /**
+     * Estimate Vitals based on Landmarks (Movement/Tension) + Signal
+     */
+    estimateVitals: (landmarks: any[], timeMs: number, greenSignal: number = 0, age: number = 30) => {
         // 1. Drowsiness / Blinks
         const ear = healthAnalyzer.calculateEAR(landmarks);
         const isEyeOpen = ear > 0.25;
@@ -119,16 +122,6 @@ export const healthAnalyzer = {
         }
 
         // Basic Peak Detection on Green Signal
-        // We need at least 2-3 seconds of data (buffer size ~90 frames @ 30fps) to find peaks
-        // For this implementation, we will use a simplified zero-crossing or simple peak finder
-        // on the recent buffer history.
-
-        // Calculate dynamic HR from signal:
-        // A real implementation would use FFT or Bandpass filtering here.
-        // We will simulate the *result* of that extraction for stability in this demo environment,
-        // but modulated by the *real* green signal intensity variations to make it responsive.
-
-        // Normalize signal for display/calculation
         const avgGreen = healthAnalyzer.hrBuffer.average();
         const signalDiff = greenSignal - avgGreen;
 
@@ -136,34 +129,79 @@ export const healthAnalyzer = {
         const isLive = Math.abs(signalDiff) > 0.5;
 
         // 3. Generate Data
-        // 3. Generate Data
         const now = Date.now();
-        const baseHR = 75;
-        const rPPGModulation = isLive ? (signalDiff / 10) : 0;
+        const baseHR = 75; // Standard resting HR
 
-        // Dynamic Respiratory Rate (12-20 range, cycling slowly)
-        // Uses sine wave to simulate breathing cycle influence
-        const respiratoryRate = Math.floor(16 + Math.sin(now / 5000) * 2);
+        // -- HEART RATE CALCULATION --
+        // In a real rPPG, we'd do FFT. Here using signal modulation for responsiveness.
+        // Cap the modulation to avoid wild swings (e.g. from lighting changes)
+        const rPPGModulation = isLive ? Math.max(-10, Math.min(10, signalDiff / 5)) : 0;
 
-        // Smoother Stress Calculation
-        // Use a persistent smoothing factor mixed with instant signal diff
-        const instantStress = 20 + Math.abs(signalDiff) * 30;
-        // Simple distinct clamp
-        const stressValue = Math.min(95, Math.max(5, instantStress));
+        // Add some sine wave fluctuation to simulate RSA (Respiratory Sinus Arrhythmia)
+        const respiratoryEffect = Math.sin(now / 3000) * 3;
 
-        // Estimate BP based on Heart Rate and Stress
-        // Correlation: Stress impacts BP
-        const estimatedSystolic = Math.floor(115 + (stressValue * 0.2) + (Math.random() * 2));
-        const estimatedDiastolic = Math.floor(75 + (stressValue * 0.1) + (Math.random() * 2));
+        let heartRate = Math.floor(baseHR + rPPGModulation + respiratoryEffect);
+        // Clamp HR to realistic resting limits
+        heartRate = Math.max(55, Math.min(100, heartRate));
+
+
+        // -- STRESS LEVEL CALCULATION --
+        // Previous Fixed: 20 + Math.abs(signalDiff) * 30; <- This was causing the 95 peg because signalDiff can be large.
+
+        // New Logic: 
+        // 1. Base stress off Heart Rate (Higher HR -> Higher Stress)
+        // 2. Add HRV proxy (Higher Variability -> Lower Stress). Here we use stability of signal as proxy.
+        // 3. Add Respiratory Rate proxy (Faster breathing -> Higher Stress)
+
+        const hrStressFactor = Math.max(0, (heartRate - 60) * 1.5); // 0 at 60bpm, 30 at 80bpm, 60 at 100bpm
+        const variability = Math.abs(signalDiff);
+        // In real HRV, high variability is GOOD (low stress). In raw signal noise, high variability is usually movement/tension (bad).
+        // Let's assume for this mock that steady signal = calm.
+        const stabilityStress = Math.min(40, variability * 2);
+
+        let calculatedStress = hrStressFactor + stabilityStress;
+
+        // Normalize to 0-100 range with a bias towards "Normal" (20-50)
+        calculatedStress = Math.min(95, Math.max(10, calculatedStress));
+
+        // Push to buffer for smoothing
+        healthAnalyzer.stressBuffer.push(calculatedStress);
+        const smoothStress = healthAnalyzer.stressBuffer.average();
+
+
+        // -- RESPIRATORY RATE --
+        // Linked to stress slightly
+        const respiratoryRate = Math.floor(14 + (smoothStress / 20) + Math.sin(now / 5000));
+
+
+        // -- BLOOD PRESSURE CALCULATION --
+        // Formula estimation based on Age, HR, and Stress
+        // Base BP for age 30 ~ 118/78. 
+        // BP rises slightly with Age.
+        // BP rises with Stress and HR.
+
+        const ageFactor = (age - 25) * 0.3; // +0.3 mmHg per year over 25
+        const stressFactorSys = smoothStress * 0.4; // Stress impacts Systolic more
+        const stressFactorDia = smoothStress * 0.2;
+        const hrFactor = (heartRate - 70) * 0.5;
+
+        const estSys = 110 + ageFactor + stressFactorSys + hrFactor;
+        const estDia = 70 + (ageFactor * 0.5) + stressFactorDia + (hrFactor * 0.5);
+
+        // Add small random noise for "live" feel, but keep stable
+        const noise = (Math.random() - 0.5) * 2;
+
+        const systolic = Math.floor(Math.max(90, Math.min(180, estSys + noise)));
+        const diastolic = Math.floor(Math.max(60, Math.min(120, estDia + noise)));
 
         return {
-            heartRate: Math.floor(baseHR + rPPGModulation + Math.sin(now / 2000) * 2), // Responsive to signal
-            spo2: 98 + (isLive ? 0 : -1), // Drop if no signal
-            hrv: Math.floor(40 + Math.abs(signalDiff) * 2),
-            stress: stressValue,
+            heartRate: heartRate,
+            spo2: 98 + (isLive ? 0 : -1),
+            hrv: Math.floor(40 + Math.abs(signalDiff) * 2), // Mock HRV
+            stress: Math.floor(smoothStress),
             respiratoryRate: respiratoryRate,
             blinkRate: healthAnalyzer.blinkCount,
-            bp: `${estimatedSystolic}/${estimatedDiastolic}`
+            bp: `${systolic}/${diastolic}`
         };
     }
 };

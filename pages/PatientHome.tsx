@@ -162,6 +162,21 @@ export const PatientHome: React.FC = () => {
     setMessageInputValue('');
   };
 
+  const handleSaveChat = async (messages: any[]) => {
+    if (!patient) return;
+
+    const updatedPatient = { ...patient, aiChatHistory: messages };
+
+    // Update local state immediately to avoid UI flicker/lag
+    setPatient(updatedPatient);
+
+    // Persist to DB and Session
+    await db.savePatient(updatedPatient);
+    try {
+      sessionStorage.setItem('activePatient', JSON.stringify(updatedPatient));
+    } catch (e) { console.warn("Session update skipped"); }
+  };
+
   if (!patient) return null;
 
   const startAudioRecording = async () => {
@@ -775,7 +790,11 @@ export const PatientHome: React.FC = () => {
       </main>
 
       {showChat && patient && (
-        <ChatBot patient={patient} onClose={() => setShowChat(false)} />
+        <ChatBot
+          patient={patient}
+          onClose={() => setShowChat(false)}
+          onSave={handleSaveChat}
+        />
       )}
 
       {showScanner && (
@@ -821,6 +840,9 @@ export const PatientHome: React.FC = () => {
                       : 'bg-white border border-gray-200 text-gray-700 rounded-bl-none'
                       }`}>
                       <p>{msg.text}</p>
+                      {msg.audioUrl && (
+                        <audio src={msg.audioUrl} controls className="mt-2 w-48 h-8 rounded-lg" />
+                      )}
                       <p className={`text-[10px] mt-2 text-right font-medium ${msg.sender === 'patient' ? 'text-indigo-200' : 'text-gray-400'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
@@ -832,7 +854,28 @@ export const PatientHome: React.FC = () => {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-white border-t border-gray-100 flex gap-3">
+            <div className="p-4 bg-white border-t border-gray-100 flex gap-3 items-center">
+              <ChatVoiceRecorder onRecordingComplete={(blob, url) => {
+                // Immediately send voice note
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const base64 = reader.result as string;
+                  const newMessage: any = {
+                    id: Date.now().toString(),
+                    text: "🎤 Voice Message",
+                    sender: 'patient',
+                    timestamp: Date.now(),
+                    read: false,
+                    audioUrl: base64
+                  };
+                  const updated = { ...patient, messages: [...(patient.messages || []), newMessage] };
+                  setPatient(updated);
+                  db.savePatient(updated);
+                  sessionStorage.setItem('activePatient', JSON.stringify(updated));
+                };
+                reader.readAsDataURL(blob);
+              }} />
+
               <input
                 type="text"
                 className="flex-1 bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 outline-none focus:bg-white focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 transition-all placeholder-gray-400"
@@ -894,7 +937,7 @@ export const PatientHome: React.FC = () => {
                   activeModule === 'RESPIRATORY' ? 'bg-blue-500' :
                     'bg-emerald-500'
               }`}>
-              <h3 className="text-xl font-black tracking-tight">{activeModule === 'FEVER' ? 'Temperature Log' : activeModule === 'PAIN' ? 'Pain Assessment' : activeModule === 'WOUND' ? 'Wound Check' : activeModule === 'RESPIRATORY' ? 'Respiratory Check' : 'Mobility Activity'}</h3>
+              <h3 className="text-xl font-black tracking-tight">{activeModule === 'FEVER' ? 'Fever Status' : activeModule === 'PAIN' ? 'Pain Assessment' : activeModule === 'WOUND' ? 'Wound Check' : activeModule === 'RESPIRATORY' ? 'Respiratory Check' : 'Mobility Activity'}</h3>
               <button onClick={() => setActiveModule(null)} className="p-2 hover:bg-white/20 rounded-full transition-all">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -969,29 +1012,36 @@ export const PatientHome: React.FC = () => {
                     />
                   </div>
 
-                  <div className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all relative overflow-hidden ${moduleData.imageUrl ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-300 text-gray-400 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-500'}`}>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setModuleData({ ...moduleData, imageUrl: reader.result as string });
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
+                  <div className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-2 transition-all relative overflow-hidden ${moduleData.imageUrl ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-300 text-gray-400 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-500 cursor-pointer'}`}>
+                    {!moduleData.imageUrl && (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setModuleData({ ...moduleData, imageUrl: reader.result as string });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    )}
                     {moduleData.imageUrl ? (
-                      <>
-                        <div className="w-full h-32 rounded-lg overflow-hidden mb-2 relative z-0">
+                      <div className="w-full flex flex-col items-center gap-3 relative z-20">
+                        <div className="w-full h-48 rounded-xl overflow-hidden shadow-lg border-2 border-white">
                           <img src={moduleData.imageUrl} className="w-full h-full object-cover" alt="Preview" />
                         </div>
-                        <span className="text-xs font-black uppercase tracking-widest z-0">Image Captured</span>
-                      </>
+                        <button
+                          onClick={() => setModuleData({ ...moduleData, imageUrl: null })}
+                          className="bg-white text-rose-600 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-rose-50 transition-colors border border-rose-100 shadow-sm"
+                        >
+                          Retake Photo
+                        </button>
+                      </div>
                     ) : (
                       <>
                         <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
@@ -1110,5 +1160,94 @@ export const PatientHome: React.FC = () => {
         </div >
       )}
     </div >
+  );
+};
+
+const ChatVoiceRecorder = ({ onRecordingComplete }: { onRecordingComplete: (blob: Blob, url: string) => void }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        setAudioBlob(blob);
+        setAudioUrl(url);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+      alert("Microphone access is required.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const deleteRecording = () => {
+    setAudioBlob(null);
+    setAudioUrl(null);
+  };
+
+  const sendRecording = () => {
+    if (audioBlob && audioUrl) {
+      onRecordingComplete(audioBlob, audioUrl);
+      deleteRecording();
+    }
+  };
+
+  if (audioUrl) {
+    return (
+      <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-xl animate-in fade-in slide-in-from-bottom-2">
+        <button onClick={deleteRecording} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <audio src={audioUrl} controls className="h-8 w-24" />
+        <button onClick={sendRecording} className="p-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-full shadow-lg transition-all transform hover:scale-105">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={isRecording ? stopRecording : startRecording}
+      className={`p-3 rounded-xl transition-all ${isRecording ? 'bg-rose-500 text-white animate-pulse shadow-rose-200 shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+      title={isRecording ? "Stop Recording" : "Click to Record Voice Note"}
+    >
+      {isRecording ? (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+        </svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      )}
+    </button>
   );
 };

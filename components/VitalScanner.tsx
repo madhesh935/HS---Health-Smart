@@ -281,7 +281,7 @@ export const VitalScanner: React.FC<{ onClose: () => void; onComplete?: (vitals:
                     // Extract rPPG signal from the canvas (now containing the current frame)
                     const greenSignal = healthAnalyzer.extractGreenSignal(canvasRef.current, landmarks);
 
-                    const stats = healthAnalyzer.estimateVitals(landmarks, Date.now(), greenSignal);
+                    const stats = healthAnalyzer.estimateVitals(landmarks, Date.now(), greenSignal, patient?.age || 30);
                     setVitals(stats);
 
                     // Update Charts

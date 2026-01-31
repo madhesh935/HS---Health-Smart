@@ -203,22 +203,27 @@ export const Dashboard: React.FC = () => {
               </div>
 
               {/* Chat Area */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50/50">
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-black">
                 {!selectedPatient.messages || selectedPatient.messages.length === 0 ? (
                   <div className="text-center py-20">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                     </div>
-                    <p className="text-gray-400 text-sm">Start a conversation with {selectedPatient.name}</p>
+                    <p className="text-gray-500 text-sm">Start a conversation with {selectedPatient.name}</p>
                   </div>
                 ) : (
                   selectedPatient.messages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.sender === 'hospital' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[75%] p-4 rounded-2xl text-sm shadow-sm ${msg.sender === 'hospital'
                         ? 'bg-indigo-600 text-white rounded-br-none'
-                        : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'
+                        : 'bg-zinc-800 border border-zinc-700 text-white rounded-bl-none'
                         }`}>
                         <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                        {msg.audioUrl && (
+                          <div className="mt-2 text-indigo-100">
+                            <audio src={msg.audioUrl} controls className="w-full h-8" />
+                          </div>
+                        )}
                         <p className={`text-[10px] mt-1 text-right ${msg.sender === 'hospital' ? 'text-indigo-200' : 'text-gray-400'}`}>
                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
@@ -230,7 +235,31 @@ export const Dashboard: React.FC = () => {
               </div>
 
               {/* Input Area */}
-              <div className="p-4 bg-white border-t border-gray-100 flex gap-3">
+              <div className="p-4 bg-white border-t border-gray-100 flex gap-3 items-center">
+                <ChatVoiceRecorder onRecordingComplete={(blob, url) => {
+                  // Auto-send audio message
+                  const reader = new FileReader();
+                  reader.onloadend = async () => {
+                    const base64 = reader.result as string;
+                    const newMessage: any = {
+                      id: Date.now().toString(),
+                      text: "🎤 Voice Message",
+                      sender: 'hospital',
+                      timestamp: Date.now(),
+                      read: false,
+                      audioUrl: base64
+                    };
+                    const updatedPatient = {
+                      ...selectedPatient,
+                      messages: [...(selectedPatient.messages || []), newMessage]
+                    };
+                    await db.savePatient(updatedPatient);
+                    // Update local state
+                    setPatients(prev => prev.map(p => p.id === updatedPatient.id ? updatedPatient : p));
+                    setSelectedPatient(updatedPatient);
+                  };
+                  reader.readAsDataURL(blob);
+                }} />
                 <input
                   type="text"
                   className="flex-1 bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 outline-none focus:bg-white focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 transition-all placeholder-gray-400"
@@ -253,5 +282,95 @@ export const Dashboard: React.FC = () => {
         )}
       </div>
     </Layout>
+  );
+};
+
+// Re-using the enhanced recorder
+const ChatVoiceRecorder = ({ onRecordingComplete }: { onRecordingComplete: (blob: Blob, url: string) => void }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        setAudioBlob(blob);
+        setAudioUrl(url);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+      alert("Microphone access is required.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const deleteRecording = () => {
+    setAudioBlob(null);
+    setAudioUrl(null);
+  };
+
+  const sendRecording = () => {
+    if (audioBlob && audioUrl) {
+      onRecordingComplete(audioBlob, audioUrl);
+      deleteRecording();
+    }
+  };
+
+  if (audioUrl) {
+    return (
+      <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-xl animate-in fade-in slide-in-from-bottom-2">
+        <button onClick={deleteRecording} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <audio src={audioUrl} controls className="h-8 w-24" />
+        <button onClick={sendRecording} className="p-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-full shadow-lg transition-all transform hover:scale-105">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={isRecording ? stopRecording : startRecording}
+      className={`p-3 rounded-xl transition-all ${isRecording ? 'bg-rose-500 text-white animate-pulse shadow-rose-200 shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+      title={isRecording ? "Stop Recording" : "Click to Record Voice Note"}
+    >
+      {isRecording ? (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+        </svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      )}
+    </button>
   );
 };

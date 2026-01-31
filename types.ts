@@ -24,6 +24,7 @@ export interface ChatMessage {
   sender: 'hospital' | 'patient';
   timestamp: number;
   read: boolean;
+  audioUrl?: string;
 }
 
 export interface Patient {
@@ -34,7 +35,7 @@ export interface Patient {
   medicalConditions: string;
   reasonForMonitoring: string;
   mobileNumber: string;
-  preferredLanguage: 'English' | 'Tamil';
+  preferredLanguage: 'English';
   hospitalId: string;
   hospitalName: string;
   monitoringConfig: MonitoringConfig;
@@ -42,8 +43,16 @@ export interface Patient {
   createdAt: number;
   reports: StabilityReport[]; // History of submissions
   messages?: ChatMessage[]; // Two-way chat history
+  aiChatHistory?: AIChatMessage[]; // AI Chatbot History
   isDischarged?: boolean;
   dischargedAt?: number;
+}
+
+export interface AIChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  audioUrl?: string;
 }
 
 export interface MonitoringConfig {
